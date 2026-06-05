@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>口袋塔羅系統</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1b4b">
+
+    <link rel="stylesheet" href="tarot_style.css">
+
+    <script src="tool/tailwindcss.js"></script>
+
+    <style>
+        #screen-reading.active~#canvas-layer {
+            display: none !important;
+            opacity: 0 !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="global-breathing-light"
+        class="hidden text-xl font-bold text-yellow-300 drop-shadow-md text-center whitespace-nowrap bg-black/50 px-6 py-2 rounded-full backdrop-blur-sm border border-yellow-500/30">
+    </div>
+
+    <div id="screen-splash" class="screen active justify-center items-center z-50 bg-black">
+        <img id="splash-gif" src="" alt="" class="hidden max-w-xs mb-4 rounded-lg shadow-lg">
+        <div id="splash-content" class="text-center transition-opacity duration-1000">
+            <h1 class="text-3xl font-bold tracking-widest text-purple-300">靈魂的指引正在載入</h1>
+        </div>
+    </div>
+
+    <div id="screen-home" class="screen justify-center items-center p-6 bg-black/40 backdrop-blur-sm">
+        <h1 class="text-5xl font-black text-yellow-300 mb-12 drop-shadow-lg text-center">口袋塔羅</h1>
+        <div class="flex flex-col gap-6 w-full max-w-xs">
+            <button onclick="navTo('screen-setup')" class="magic-btn py-4 px-6 text-2xl font-bold tracking-wider">🃏
+                開始抽牌</button>
+            <button onclick="openHistoryScreen()" class="magic-btn py-4 px-6 text-2xl font-bold tracking-wider">📜
+                占卜紀錄</button>
+            <button onclick="navTo('screen-settings')" class="magic-btn py-4 px-6 text-2xl font-bold tracking-wider">⚙️
+                祭壇設定</button>
+        </div>
+    </div>
+
+    <div id="screen-setup" class="screen bg-black/60 backdrop-blur-md pt-8">
+        <div class="content-scroll flex flex-col items-center px-6">
+            <h2 class="text-3xl font-bold mb-8">設定問題與牌陣</h2>
+
+            <div class="w-full max-w-md flex flex-col gap-6">
+                <textarea id="input-question" class="magic-input h-24" placeholder="請思考占卜問題...(可填寫)"></textarea>
+
+                <div class="flex gap-4 w-full">
+                    <button onclick="openDeckModal()"
+                        class="magic-btn flex-1 flex flex-col items-center justify-center aspect-square py-4 gap-2 bg-purple-900/60 border-purple-400">
+                        <span id="setup-deck-icon" class="text-4xl mb-1">🎴</span>
+                        <span id="setup-deck-label"
+                            class="text-sm whitespace-normal text-purple-200 font-bold text-center">22 張 (大阿爾克那)</span>
+                    </button>
+
+                    <button onclick="openSpreadModal()"
+                        class="magic-btn flex-1 flex flex-col items-center justify-center aspect-square py-4 gap-2 bg-purple-900/60 border-purple-400">
+                        <span id="setup-spread-icon" class="text-4xl mb-1">🔯</span>
+                        <span id="setup-spread-label"
+                            class="text-sm whitespace-normal text-purple-200 font-bold text-center">六芒星牌陣 (7張)</span>
+                    </button>
+                </div>
+
+                <div class="flex justify-between gap-4 mt-6 pb-12 w-full">
+                    <button onclick="navTo('screen-home')"
+                        class="magic-btn py-3 px-6 bg-gray-700 flex-1 text-base">返回</button>
+                    <button onclick="handleSetupNext()"
+                        class="magic-btn py-3 px-6 text-yellow-300 border-yellow-300 flex-1 text-base">進入洗牌 ➡️</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-manual-shuffle" class="screen bg-black/80 backdrop-blur-md pt-12 items-center z-40">
+        <h2 class="text-3xl font-bold text-yellow-300 mb-8"></h2>
+
+        <div class="relative w-64 h-64 flex flex-col items-center justify-end mb-8">
+            <div id="manual-deck-container" class="relative w-24 h-48 cursor-grab"></div>
+        </div>
+
+        <p id="manual-shuffle-count" class="text-purple-300 mb-8 font-bold text-lg">已洗牌：0 / 3</p>
+
+        <button id="btn-enter-wash" onclick="proceedToNextStage()"
+            class="magic-btn py-3 px-8 text-xl text-yellow-300 border-yellow-300 opacity-30 cursor-not-allowed transition-all"
+            disabled>進入搓牌</button>
+    </div>
+
+    <div id="modal-deck"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex-col items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-purple-900/90 border-2 border-purple-400 p-6 rounded-xl w-full max-w-md flex flex-col gap-4">
+            <h3 class="text-2xl font-bold text-yellow-300 text-center mb-1">選擇占卜牌組</h3>
+
+            <p class="text-[0.8rem] text-yellow-300/80 text-center tracking-widest mb-2">👇 直接點擊選項確認
+                👇<br>💡點擊右上角🔓鎖頭設為預設，返回帶入。</p>
+
+            <div class="flex justify-center gap-4">
+                <button id="btn-deck-22" onclick="selectDeckAndNext(22, '🎴', '22 張 (大阿爾克那)')"
+                    class="magic-btn flex-1 flex flex-col items-center justify-center aspect-square py-4 gap-2 bg-purple-900/60 border-purple-500 hover:border-yellow-300 transition-colors relative">
+                    <span id="lock-deck-22" onclick="toggleDeckLock(event, 22, '🎴', '22 張 (大阿爾克那)')"
+                        class="absolute top-2 right-2 text-base opacity-30 select-none cursor-pointer p-1 transition-all z-20">🔓</span>
+                    <span class="text-4xl">🎴</span>
+                    <span class="font-bold text-sm text-yellow-300">22 張</span>
+                    <span class="text-[0.6rem] text-purple-200">大阿爾克那</span>
+                </button>
+
+                <button id="btn-deck-78" onclick="selectDeckAndNext(78, '🃏', '78 張 (完整牌組)')"
+                    class="magic-btn flex-1 flex flex-col items-center justify-center aspect-square py-4 gap-2 bg-purple-900/60 border-purple-500 hover:border-yellow-300 transition-colors relative">
+                    <span id="lock-deck-78" onclick="toggleDeckLock(event, 78, '🃏', '78 張 (完整牌組)')"
+                        class="absolute top-2 right-2 text-base opacity-30 select-none cursor-pointer p-1 transition-all z-20">🔓</span>
+                    <span class="text-4xl">🃏</span>
+                    <span class="font-bold text-sm text-yellow-300">78 張</span>
+                    <span class="text-[0.6rem] text-purple-200">完整牌組</span>
+                </button>
+            </div>
+            <button onclick="closeSetupModal()"
+                class="magic-btn py-2 px-4 bg-gray-700 mx-auto mt-4 w-full max-w-[150px]">返回</button>
+        </div>
+    </div>
+
+    <div id="modal-spread"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex-col items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-purple-900/90 border-2 border-purple-400 p-6 rounded-xl w-full max-w-md flex flex-col gap-4">
+            <h3 class="text-2xl font-bold text-yellow-300 text-center">選擇占卜牌陣</h3>
+
+            <p class="text-[0.8rem] text-yellow-300/80 text-center tracking-widest mb-2">👇 直接點擊選項確認
+                👇<br>💡點擊右上角🔓鎖頭設為預設，返回帶入。</p>
+
+            <div id="spread-grid" class="flex flex-wrap justify-center gap-3 mt-2 max-h-[50vh] overflow-y-auto p-2">
+            </div>
+            <button onclick="closeSetupModal()"
+                class="magic-btn py-2 px-4 bg-gray-700 mx-auto mt-4 w-full max-w-[150px]">返回</button>
+        </div>
+    </div>
+
+    <div id="screen-settings" class="screen bg-black/70 backdrop-blur-md pt-12">
+
+        <div class="flex justify-between items-center px-8 mb-10 w-full max-w-md mx-auto shrink-0">
+            <h2 class="text-3xl font-bold text-yellow-300 tracking-widest">⚙️ 設定</h2>
+            <button onclick="navTo('screen-home')" class="magic-btn py-1 px-4 bg-gray-700 text-sm"
+                style="min-width: auto;">返回首頁</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6 px-8 max-w-md mx-auto flex-1">
+            <button onclick="openSubSettings('modal-set-op')"
+                class="magic-btn flex flex-col items-center justify-center aspect-square p-4 gap-3 border-purple-400 bg-purple-900/40">
+                <span class="text-4xl mb-1">⚙️</span><span class="font-bold">操作設定</span>
+            </button>
+            <button onclick="openSubSettings('modal-set-theme')"
+                class="magic-btn flex flex-col items-center justify-center aspect-square p-4 gap-3 border-purple-400 bg-purple-900/40">
+                <span class="text-4xl mb-1">🎨</span><span class="font-bold">主題設定</span>
+            </button>
+            <button onclick="openSubSettings('modal-set-card')"
+                class="magic-btn flex flex-col items-center justify-center aspect-square p-4 gap-3 border-purple-400 bg-purple-900/40">
+                <span class="text-4xl mb-1">🃏</span><span class="font-bold">牌式設定</span>
+            </button>
+            <button onclick="openMeaningDictionary()"
+                class="magic-btn flex flex-col items-center justify-center aspect-square p-4 gap-3 border-yellow-500 bg-purple-900/40">
+                <span class="text-4xl mb-1">📖</span><span class="font-bold text-yellow-300">百科全書</span>
+            </button>
+
+            <button onclick="openSubSettings('modal-set-backup')"
+                class="magic-btn col-span-2 flex items-center justify-center p-4 gap-4 border-blue-400 bg-blue-900/30">
+                <span class="text-3xl">💾</span><span
+                    class="font-bold text-blue-300 text-lg tracking-widest">資料備份與串接中心</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="sub-settings-overlay"
+        class="fixed inset-0 bg-black/80 z-[120] hidden items-center justify-center backdrop-blur-md p-6"
+        onclick="closeSubSettings()">
+
+        <div id="modal-set-op"
+            class="sub-modal hidden w-full max-w-sm bg-purple-950 border-2 border-purple-400 p-6 rounded-2xl flex flex-col gap-5 relative"
+            onclick="event.stopPropagation()">
+            <button onclick="closeSubSettings()"
+                class="absolute top-3 right-3 w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-md transition-all z-50">&times;</button>
+
+            <h3 class="text-xl font-bold text-yellow-300 border-b border-purple-500 pb-3 pr-8">⚙️ 操作設定</h3>
+            <div class="space-y-4 text-sm">
+                <div class="p-3 bg-black/30 rounded">
+                    <p class="text-yellow-300 font-bold mb-2">🔄 占卜儀式流程</p>
+
+                    <label class="flex justify-between items-center mb-2">
+                        <span>1. 手動切牌 (洗牌)</span>
+                        <input type="checkbox" id="set-stage-shuffle" checked class="w-5 h-5"
+                            onchange="toggleMinShuffleState(this.checked)">
+                    </label>
+
+                    <div id="wrapper-min-shuffle"
+                        class="flex justify-between items-center pl-4 mb-3 border-l-2 border-purple-500/50 ml-1 transition-all duration-300">
+                        <span id="label-min-shuffle" class="text-xs text-purple-200">↳ 最少洗牌次數</span>
+
+                        <input type="number" id="setting-min-shuffle" min="1" value="3"
+                            class="w-12 bg-purple-900 text-white text-center p-1 rounded text-xs border border-purple-500">
+                    </div>
+
+                    <label class="flex justify-between items-center mb-2">
+                        <span>2. 桌面搓牌</span>
+                        <input type="checkbox" id="set-stage-wash" checked class="w-5 h-5">
+                    </label>
+                    <label class="flex justify-between items-center mb-2">
+                        <span>3. 憑直覺切牌</span>
+                        <input type="checkbox" id="set-stage-cut" checked class="w-5 h-5"
+                            onchange="toggleCutState(this.checked)">
+                    </label>
+
+                    <div id="wrapper-cut-piles"
+                        class="flex justify-between items-center pl-4 mb-1 border-l-2 border-purple-500/50 ml-1 transition-all duration-300">
+                        <span id="label-cut-piles" class="text-xs text-purple-200">↳ 切牌堆數</span>
+
+                        <input type="number" id="setting-cut-piles" min="2" value="3"
+                            class="w-12 bg-purple-900 text-white text-center p-1 rounded text-xs border border-purple-500">
+                    </div>
+                </div>
+                <div class="flex justify-between items-center p-3 bg-black/30 rounded">
+                    <span>🃏 抽牌風格</span>
+                    <select id="setting-draw-style" class="bg-purple-800 p-1 rounded">
+                        <option value="fan">扇形攤開</option>
+                        <option value="full" selected>一格一張</option>
+                    </select>
+                </div>
+                <div class="flex justify-between items-center p-3 bg-black/30 rounded">
+                    <span>🎯 選牌操作模式</span>
+                    <select id="setting-select-mode" class="bg-purple-800 p-1 rounded">
+                        <option value="click">點擊</option>
+                        <option value="swipe">滑動</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-2 w-full">
+                <button onclick="restoreSubSettings('op')"
+                    class="magic-btn py-2 px-0 bg-red-900/60 border-red-500 text-[0.7rem] flex-1"
+                    style="min-width: 0;">還原預設</button>
+                <button onclick="saveAndCloseSubSettings(event)" class="magic-btn py-2 px-0 flex-[2]"
+                    style="min-width: 0;">儲存</button>
+            </div>
+        </div>
+
+        <div id="modal-set-theme"
+            class="sub-modal hidden w-full max-w-sm bg-purple-950 border-2 border-purple-400 p-6 rounded-2xl flex flex-col gap-4 relative"
+            onclick="event.stopPropagation()">
+            <button onclick="closeSubSettings()"
+                class="absolute top-3 right-3 w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-md transition-all z-50">&times;</button>
+
+            <h3 class="text-xl font-bold text-yellow-300 border-b border-purple-500 pb-3 pr-8">🎨 主題設定</h3>
+            <div class="space-y-4 text-xs">
+                <div>
+                    <label class="block mb-2 text-purple-200 font-bold">介面環境氛圍 (自訂調色盤)</label>
+                    <div
+                        class="flex gap-3 items-center justify-start bg-black/30 p-2 rounded-lg border border-purple-500/50">
+                        <input type="color" id="theme-color-picker"
+                            class="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0 shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+                            onchange="setCustomThemeColor(this.value)">
+                        <span class="text-xs text-purple-200">點擊左側色塊，調配你的專屬靈性能量色</span>
+                    </div>
+                </div>
+                <div><label class="block mb-1 text-purple-200">選擇塔羅主題</label><select id="setting-deck-theme"
+                        class="w-full bg-purple-800 p-2 rounded"></select></div>
+                <div><label class="block mb-1 text-purple-200">上傳全域背景</label><input type="file" id="upload-bg-img"
+                        accept="image/*" class="w-full"></div>
+                <div><label class="block mb-1 text-purple-200">上傳洗牌桌布</label><input type="file" id="upload-desk-img"
+                        accept="image/*" class="w-full"></div>
+                <div><label class="block mb-1 text-purple-200">上傳開場動畫 (GIF/MP4)</label><input type="file"
+                        id="upload-splash-anim" accept="image/*" class="w-full"></div>
+            </div>
+            <div class="flex gap-3 mt-4 w-full">
+                <button onclick="restoreSubSettings('theme')"
+                    class="magic-btn py-2 px-0 bg-red-900/60 border-red-500 text-[0.7rem] flex-1"
+                    style="min-width: 0;">還原預設</button>
+                <button onclick="saveAndCloseSubSettings(event)" class="magic-btn py-2 px-0 flex-[2]"
+                    style="min-width: 0;">儲存</button>
+            </div>
+        </div>
+
+        <div id="modal-set-card"
+            class="sub-modal hidden w-full max-w-sm bg-purple-950 border-2 border-purple-400 p-6 rounded-2xl flex flex-col gap-4 relative"
+            onclick="event.stopPropagation()">
+            <button onclick="closeSubSettings()"
+                class="absolute top-3 right-3 w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-md transition-all z-50">&times;</button>
+
+            <h3 class="text-xl font-bold text-yellow-300 border-b border-purple-500 pb-3 pr-8">🃏 牌式設定</h3>
+
+            <button onclick="openSpreadManager(); closeSubSettings();"
+                class="magic-btn py-3 border-yellow-300 text-yellow-300">🔯 牌陣設定 (新增/編輯)</button>
+
+            <div class="p-3 bg-black/30 rounded space-y-3">
+                <div>
+                    <label class="block mb-1 text-xs text-purple-200">自訂牌背</label>
+                    <input type="file" id="upload-cardback" accept="image/*" class="text-xs w-full">
+                </div>
+                <div>
+                    <label class="block mb-1 text-xs text-purple-200">批次上傳 78 張牌面</label>
+                    <input type="file" id="upload-deck-batch" multiple accept="image/*" class="text-xs w-full">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-4 w-full">
+                <button onclick="restoreSubSettings('card')"
+                    class="magic-btn py-2 px-0 bg-red-900/60 border-red-500 text-[0.7rem] flex-1"
+                    style="min-width: 0;">還原預設</button>
+                <button onclick="saveAndCloseSubSettings(event)" class="magic-btn py-2 px-0 flex-[2]"
+                    style="min-width: 0;">儲存</button>
+            </div>
+        </div>
+
+        <div id="modal-set-backup"
+            class="sub-modal hidden w-full max-w-sm bg-purple-950 border-2 border-blue-400 p-6 rounded-2xl flex flex-col gap-4 relative"
+            onclick="event.stopPropagation()">
+            <button onclick="closeSubSettings()"
+                class="absolute top-3 right-3 w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-md transition-all z-50">&times;</button>
+
+            <h3 class="text-xl font-bold text-blue-300 border-b border-blue-500 pb-3 pr-8">💾 備份中心</h3>
+
+            <div class="overflow-y-auto content-scroll pr-2 space-y-4 max-h-[60vh]">
+
+                <div class="p-3 bg-black/30 rounded border border-purple-500/50 space-y-3">
+                    <p class="text-[0.8rem] font-bold text-yellow-300">🔗 自訂資料庫串接</p>
+                    <div>
+                        <label class="block mb-1 text-[0.65rem] text-purple-200">Firebase API Key (覆蓋內建)</label>
+                        <input type="text" id="setting-firebase-key" class="magic-input text-xs"
+                            placeholder="若留空則使用系統內建 Key">
+                    </div>
+                    <div>
+                        <label class="block mb-1 text-[0.65rem] text-purple-200">Webhook / Web App URL</label>
+                        <input type="text" id="setting-webhook-url" class="magic-input text-xs"
+                            placeholder="輸入 Webhook 或 GAS 網址">
+                    </div>
+
+                    <div class="flex gap-2 mt-2 w-full">
+                        <button onclick="saveApiKeys()"
+                            class="magic-btn flex-1 h-auto py-2 px-1 text-[0.7rem] border-yellow-400 text-yellow-300 min-w-0 whitespace-normal leading-tight">💾
+                            儲存串接設定</button>
+                        <button onclick="document.getElementById('gas-tutorial-box').classList.toggle('hidden');"
+                            class="magic-btn flex-1 h-auto py-2 px-1 text-[0.7rem] border-blue-400 text-blue-300 bg-blue-900/40 min-w-0 whitespace-normal leading-tight">📖
+                            免費自建雲端教學</button>
+                    </div>
+
+                    <div id="gas-tutorial-box"
+                        class="hidden mt-2 p-3 bg-blue-950/60 border border-blue-400 rounded-lg text-blue-100 text-xs leading-relaxed shadow-inner">
+                        <div class="font-bold text-sm mb-2 text-yellow-300 drop-shadow-md">🎁 隱藏版大補帖：打造專屬 Google 雲端
+                        </div>
+                        <p class="text-blue-200">只需 3 個步驟，把 Google 試算表變成你的免費資料庫：</p>
+                        <ol class="list-decimal pl-5 mt-2 mb-3 space-y-1 text-[0.7rem]">
+                            <li>開啟全新 Google 試算表，點擊上方選單 <b>擴充功能 -> Apps Script</b>。</li>
+                            <li>將編輯器內的程式碼清空，點擊下方按鈕複製專屬程式碼並貼上。</li>
+                            <li>點擊右上角 <b>部署 -> 新增部署作業</b> -> 類型選 <b>網頁應用程式</b>。存取權限設 <b>所有人</b>，部署後複製那串 <b>Web App
+                                    URL</b>，貼到上方輸入框即可！</li>
+                        </ol>
+
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="copyGasCode()"
+                                class="magic-btn flex-1 h-auto py-2 px-1 text-[0.65rem] bg-blue-700/80 border-blue-400 text-white min-w-0 whitespace-normal leading-tight shadow-md">📄
+                                複製程式碼</button>
+                            <button onclick="copyGasTutorial()"
+                                class="magic-btn flex-1 h-auto py-2 px-1 text-[0.65rem] bg-green-700/80 border-green-400 text-white min-w-0 whitespace-normal leading-tight shadow-md">📤
+                                複製完整教學</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-black/40 rounded border border-purple-500/30 space-y-2">
+                    <p class="text-[0.8rem] font-bold text-yellow-300">🌌 阿卡西雲端庫同步</p>
+                    <div class="flex gap-2 w-full">
+                        <button id="btn-cloud-backup" onclick="handleCloudBackup()"
+                            class="magic-btn flex-1 h-auto py-2 px-1 text-[0.75rem] border-blue-400 text-blue-200 bg-blue-950/40 min-w-0 whitespace-normal leading-tight">☁️
+                            雲端備份</button>
+                        <button id="btn-cloud-restore" onclick="handleCloudRestore()"
+                            class="magic-btn flex-1 h-auto py-2 px-1 text-[0.75rem] border-green-400 text-green-200 bg-green-950/40 min-w-0 whitespace-normal leading-tight">🌀
+                            雲端還原</button>
+                    </div>
+                </div>
+
+                <div
+                    class="p-3 bg-black/40 rounded border border-blue-500/50 space-y-2 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+                    <p class="text-[0.8rem] font-bold text-blue-300">📦 本機完整備份 (ZIP)</p>
+                    <p class="text-[0.6rem] text-purple-200 leading-tight">打包所有設定、牌陣、筆記與您上傳的所有圖片檔案，無網路也能備份還原。</p>
+                    <div class="flex flex-col gap-2 w-full mt-2">
+                        <button onclick="exportLocalZip()"
+                            class="magic-btn w-full h-auto py-2 px-2 text-sm border-blue-400 text-blue-300 bg-blue-900/40 whitespace-normal leading-tight">📥
+                            匯出完整備份檔 (.zip)</button>
+
+                        <label
+                            class="magic-btn w-full h-auto py-2 px-2 text-sm border-red-400 text-red-300 bg-red-900/40 text-center cursor-pointer whitespace-normal leading-tight">
+                            📤 從備份檔還原
+                            <input type="file" id="import-zip-file" accept=".zip" class="hidden"
+                                onchange="importLocalZip(event)">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="closeSubSettings()" class="magic-btn py-2 px-0 w-full mt-2"
+                style="min-width: 0;">確定</button>
+        </div>
+    </div>
+
+    <div id="screen-spread-manage" class="screen bg-black/60 backdrop-blur-md pt-8">
+        <div class="flex justify-between items-center px-6 mb-4 shrink-0">
+            <h2 class="text-2xl font-bold">牌陣清單管理</h2>
+            <button onclick="openCustomSpreadBuilder()"
+                class="magic-btn py-1 px-3 border-yellow-300 text-yellow-300 text-sm">➕ 新增</button>
+        </div>
+        <div class="content-scroll px-6">
+            <div id="manage-spread-list" class="flex flex-col gap-3 w-full max-w-md mx-auto"></div>
+        </div>
+        <button onclick="navTo('screen-settings')" class="magic-btn py-2 px-6 w-full max-w-xs bg-gray-700">返回</button>
+    </div>
+
+    <div id="screen-custom-spread-1" class="screen bg-black/90 backdrop-blur-md pt-8 z-50">
+        <h2 class="text-2xl font-bold mb-4 text-center shrink-0 text-yellow-300">設定牌陣意義</h2>
+        <div class="content-scroll px-6">
+            <div class="w-full max-w-md mx-auto">
+                <div class="flex gap-2 mb-4 w-full">
+                    <input type="text" id="custom-spread-icon"
+                        class="magic-input font-bold text-center w-16 text-2xl px-2" placeholder="✨" value="✨">
+                    <input type="text" id="custom-spread-name" class="magic-input font-bold text-lg flex-1"
+                        placeholder="輸入牌陣名稱...">
+                </div>
+                <div id="custom-spread-rows" class="flex flex-col gap-2 mb-4"></div>
+                <button onclick="addCustomSpreadRow()"
+                    class="w-full py-2 bg-purple-800 rounded border border-purple-500 hover:bg-purple-700 text-xl font-bold">+</button>
+            </div>
+        </div>
+        <div class="bottom-bar justify-between px-6">
+            <button onclick="navTo('screen-spread-manage')" class="magic-btn py-2 px-6 bg-gray-700">返回</button>
+            <button onclick="goToCustomSpreadStep2()"
+                class="magic-btn py-2 px-6 text-yellow-300 border-yellow-300">下一步</button>
+        </div>
+    </div>
+
+    <div id="screen-custom-spread-2" class="screen bg-black z-50 blueprint-grid">
+        <div id="builder-canvas" class="w-full h-[70vh] relative border-b-2 border-purple-500 touch-none">
+            <p class="absolute top-4 w-full text-center text-purple-300/50 text-sm pointer-events-none">
+                請拖曳下方牌框至您想要的位置
+            </p>
+            <div id="builder-placed-cards"></div>
+        </div>
+        <div class="bottom-bar justify-around px-2">
+            <button onclick="navTo('screen-spread-manage')"
+                class="magic-btn py-2 px-3 bg-red-900 border-red-500 text-xs">放棄</button>
+            <button onclick="navTo('screen-custom-spread-1')"
+                class="magic-btn py-2 px-3 bg-gray-700 text-xs">上一頁</button>
+            <button onclick="saveCustomSpread()" class="magic-btn py-2 px-3 text-yellow-300 text-xs">儲存牌陣</button>
+        </div>
+    </div>
+
+    <div id="screen-history" class="screen bg-black/60 backdrop-blur-md pt-4">
+        <h2 class="text-2xl font-bold mb-2 text-center shrink-0">阿卡西紀錄</h2>
+        <div id="history-filter-bar" class="w-full max-w-md mx-auto mb-2 px-6 shrink-0">
+            <div class="bg-purple-900/40 p-2 rounded-lg border border-purple-500 shadow-inner flex flex-col gap-1.5">
+                <div class="flex gap-2 items-center flex-nowrap w-full">
+                    <input type="date" id="filter-date-start"
+                        class="magic-input h-8 text-[11px] sm:text-xs flex-1 px-1.5 py-0.5 whitespace-nowrap"
+                        onchange="applyHistoryFilters()">
+                    <span class="text-purple-300 text-xs shrink-0">至</span>
+                    <input type="date" id="filter-date-end"
+                        class="magic-input h-8 text-[11px] sm:text-xs flex-1 px-1.5 py-0.5 whitespace-nowrap"
+                        onchange="applyHistoryFilters()">
+                </div>
+                <div class="flex gap-2 flex-nowrap w-full">
+                    <input type="text" id="filter-keyword"
+                        class="magic-input h-8 text-[11px] sm:text-xs flex-1 px-2 py-1" placeholder="🔍 搜尋問題或備註"
+                        oninput="triggerDebouncedFilter()">
+                    <input type="text" id="filter-card" class="magic-input h-8 text-[11px] sm:text-xs flex-1 px-2 py-1"
+                        placeholder="🃏 搜尋出現的牌卡" oninput="triggerDebouncedFilter()">
+                </div>
+                <div class="flex gap-2 flex-nowrap w-full">
+                    <select id="filter-spread"
+                        class="magic-input h-8 text-[11px] sm:text-xs flex-[3] py-1 px-2 truncate whitespace-nowrap"
+                        onchange="applyHistoryFilters()">
+                    </select>
+                    <button onclick="resetHistoryFilters()"
+                        class="magic-btn bg-gray-700 h-8 text-xs px-4 py-0 flex-1 flex items-center justify-center">重置</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-scroll px-6 pb-20">
+            <div id="history-empty-state" class="hidden text-center text-purple-300 text-sm mt-10">找不到符合條件的占卜紀錄...</div>
+            <div id="history-list" class="w-full max-w-md mx-auto flex flex-col gap-2"></div>
+        </div>
+
+        <div class="bottom-bar">
+            <button onclick="navTo('screen-home')" class="magic-btn py-2 px-6 w-full max-w-xs">返回首頁</button>
+        </div>
+    </div>
+
+    <div id="screen-reading" class="screen bg-black/85 backdrop-blur-lg z-50 pt-6">
+        <h2 class="text-2xl font-bold mb-2 text-yellow-300 text-center shrink-0" id="reading-title">全螢幕解牌室</h2>
+        <p id="reading-question" class="text-center text-purple-200 mb-4 font-bold text-lg shrink-0"></p>
+
+        <div class="content-scroll px-2 flex-1" id="reading-scroll-area">
+            <div id="reading-spread" class="history-spread-container bg-transparent mb-4"></div>
+        </div>
+
+        <div id="reading-footer-notes" class="w-full max-w-md mx-auto px-4 pb-24 shrink-0 z-20">
+        </div>
+
+        <div class="bottom-bar gap-2" id="reading-buttons"></div>
+    </div>
+
+    <div id="card-meaning-modal"
+        class="fixed inset-0 bg-black/85 z-[100] hidden flex-col items-center justify-center backdrop-blur-md p-3 transition-opacity duration-300">
+
+        <div
+            class="bg-purple-950 border-2 border-purple-400 rounded-3xl w-[95vw] max-w-[500px] flex flex-col shadow-[0_0_40px_rgba(168,85,247,0.4)] max-h-[88vh] min-h-[60vh]">
+
+            <div class="flex justify-center shrink-0 relative px-4 pt-6">
+                <div id="meaning-card-img"
+                    class="w-44 h-72 rounded-xl bg-cover bg-center shadow-[0_10px_20px_rgba(0,0,0,0.6)] border border-purple-300/30">
+                </div>
+                <button onclick="history.back() /* ✨ 修改此處，交由 popstate 統一處理關閉 */"
+                    class="absolute top-2 right-4 w-10 h-10 bg-black/80 border border-purple-400 text-purple-200 rounded-full flex items-center justify-center shadow-lg hover:text-white hover:bg-red-800 transition-colors z-[60] text-xl">
+                    ✕
+                </button>
+            </div>
+
+            <div class="shrink-0 text-center px-6 pt-4 pb-2 border-b border-purple-500/30">
+                <h2 id="meaning-card-title" class="text-xl font-bold text-yellow-300 drop-shadow-md">
+                </h2>
+                <div id="meaning-card-orientation" class="mx-auto text-sm mt-1"></div>
+            </div>
+
+            <div class="overflow-y-auto px-6 pb-6 pt-4 flex flex-col flex-1 gap-3 text-center justify-center my-auto">
+                <div id="meaning-default-text"
+                    class="text-gray-100 text-base leading-relaxed whitespace-pre-wrap text-left sm:text-center mt-2">
+                </div>
+                <div id="meaning-custom-section" class="border-t border-purple-500/30 pt-4 mt-2 text-left">
+                    <p class="text-sm text-yellow-300 font-bold mb-2">✍️ 祭司獨家靈感</p>
+                    <div id="meaning-custom-text"
+                        class="text-purple-200 text-sm leading-relaxed italic bg-purple-950/40 p-4 rounded-lg border border-purple-900/50">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas-layer" class="relative">
+        <div id="shuffle-zone"
+            class="absolute border-y-2 border-purple-500/50 z-0 pointer-events-none hidden bg-cover bg-center"></div>
+        <div id="canvas-container" class="w-full h-full relative z-10"></div>
+    </div>
+
+    <div id="spread-layer"></div>
+
+    <div id="pre-shuffle-overlay" class="fixed inset-0 bg-black/90 z-[60] hidden flex-col items-center justify-center">
+        <div class="text-6xl animate-spin mb-4">🌀</div>
+        <p class="text-yellow-300 font-bold tracking-widest text-xl">傾注靈魂能量中...</p>
+    </div>
+
+    <div id="ritual-ui" class="hidden flex gap-2 justify-center">
+        <button id="btn-finish-shuffle" class="magic-btn shadow-lg py-2 px-4 text-sm" disabled>👉 請觸碰牌堆</button>
+        <button id="btn-auto-chaos" onclick="triggerChaosShuffle()"
+            class="magic-btn py-2 px-4 text-xs text-blue-300 border-blue-400">🌀 輔助搓亂</button>
+        <button id="btn-gather" class="magic-btn shadow-lg py-2 px-4 text-sm" disabled>📦 雙手收牌</button>
+        <button id="btn-cut-fan" class="magic-btn shadow-lg py-2 px-4 text-sm" disabled>✂️ 切牌展開</button>
+    </div>
+
+    <div id="cut-modal"
+        class="fixed inset-0 bg-black/95 hidden z-[70] flex-col items-center justify-center backdrop-blur-md">
+        <h2 class="absolute top-24 text-3xl text-yellow-300 font-bold">憑直覺切牌</h2>
+        <div id="cut-area"
+            class="w-full max-w-md h-[300px] flex items-end justify-center gap-8 border-b-4 border-purple-900 pb-2">
+        </div>
+    </div>
+
+    <div id="screen-meaning-dict" class="screen bg-black/95 backdrop-blur-md pt-8 z-[80]">
+        <div class="flex justify-between items-center px-4 mb-4 shrink-0 flex-nowrap w-full">
+            <h2 class="text-xl sm:text-2xl font-bold text-yellow-300 whitespace-nowrap truncate">📖 牌義百科全書</h2>
+            <button onclick="history.back()"
+                class="magic-btn py-1 px-3 bg-gray-700 text-xs sm:text-sm flex-shrink-0 ml-2"
+                style="min-width: auto;">返回</button>
+        </div>
+
+        <div class="px-3 mb-4 shrink-0 flex flex-col gap-3 justify-center items-center w-full">
+            <div class="flex gap-2 w-full max-w-sm mx-auto justify-center">
+                <button id="filter-btn-all" onclick="filterDictionary('all')"
+                    class="magic-btn flex-1 py-1 px-0 text-[0.65rem] sm:text-xs bg-yellow-600 text-black border-yellow-400"
+                    style="min-width: 0;">全部</button>
+                <button id="filter-btn-major" onclick="filterDictionary('major')"
+                    class="magic-btn flex-1 py-1 px-0 text-[0.65rem] sm:text-xs bg-purple-900 border-purple-500"
+                    style="min-width: 0;">大阿爾克那</button>
+            </div>
+
+            <div
+                class="flex gap-1 w-full items-center justify-between border border-dashed border-purple-400 p-1.5 pt-3.5 rounded-lg relative max-w-sm mx-auto">
+                <span
+                    class="absolute -top-2.5 left-3 bg-black px-1 text-[0.65rem] text-purple-300 font-bold tracking-widest">小阿爾克那</span>
+                <button id="filter-btn-wands" onclick="filterDictionary('wands')"
+                    class="magic-btn flex-1 py-1 px-0 text-[0.65rem] sm:text-xs bg-purple-900 border-purple-500"
+                    style="min-width: 0;">權杖</button>
+                <button id="filter-btn-cups" onclick="filterDictionary('cups')"
+                    class="magic-btn flex-1 py-1 px-0 text-[0.65rem] sm:text-xs bg-purple-900 border-purple-500"
+                    style="min-width: 0;">聖杯</button>
+                <button id="filter-btn-swords" onclick="filterDictionary('swords')"
+                    class="magic-btn flex-1 py-1 px-0 text-[0.65rem] sm:text-xs bg-purple-900 border-purple-500"
+                    style="min-width: 0;">寶劍</button>
+                <button id="filter-btn-pentacles" onclick="filterDictionary('pentacles')"
+                    class="magic-btn flex-1 py-1 px-0 text-[0.65rem] sm:text-xs bg-purple-900 border-purple-500"
+                    style="min-width: 0;">錢幣</button>
+            </div>
+        </div>
+
+        <div class="content-scroll px-4 pb-8">
+            <div id="dict-container" class="flex flex-col gap-6 w-full max-w-3xl mx-auto"></div>
+        </div>
+    </div>
+
+    <div id="modal-dict-edit"
+        class="fixed inset-0 bg-black/95 hidden z-[150] flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div
+            class="bg-purple-900 border border-yellow-400 rounded-xl w-full max-w-md flex flex-col shadow-2xl relative max-h-[85vh] h-[80vh]">
+            <div
+                class="flex justify-between items-center p-4 pb-3 border-b border-purple-500/50 shrink-0 pr-12 relative">
+                <h3 id="dict-edit-title" class="text-xl font-bold text-yellow-300"></h3>
+                <button onclick="closeDictEdit()"
+                    class="absolute top-3 right-3 w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-md transition-all z-50">&times;</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 content-scroll">
+                <div class="flex justify-center">
+                    <div id="dict-edit-img"
+                        class="w-32 h-56 bg-cover bg-center rounded-lg shadow-lg border border-purple-500"></div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs text-green-400 font-bold">📚 內建牌義 - 正位</label>
+                        <div class="flex gap-1.5">
+                            <button onclick="toggleBuiltinEdit('upright')" id="btn-edit-builtin-upright"
+                                class="text-xs px-2 py-0.5 bg-purple-800 text-purple-200 border border-purple-500 rounded hover:text-white transition-all">✏️</button>
+                            <button onclick="saveSingleBuiltin('upright')" id="btn-save-builtin-upright"
+                                class="text-xs px-2 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded pointer-events-none transition-all">💾</button>
+                            <button onclick="restoreSingleBuiltin('upright')"
+                                class="text-xs px-2 py-0.5 bg-purple-800 text-yellow-400 border border-purple-500 rounded hover:bg-purple-700 transition-all">↻</button>
+                        </div>
+                    </div>
+                    <textarea id="dict-edit-builtin-upright"
+                        class="magic-input h-24 text-sm leading-relaxed opacity-60 pointer-events-none resize-none"
+                        readonly></textarea>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs text-red-400 font-bold">📚 內建牌義 - 逆位</label>
+                        <div class="flex gap-1.5">
+                            <button onclick="toggleBuiltinEdit('reversed')" id="btn-edit-builtin-reversed"
+                                class="text-xs px-2 py-0.5 bg-purple-800 text-purple-200 border border-purple-500 rounded hover:text-white transition-all">✏️</button>
+                            <button onclick="saveSingleBuiltin('reversed')" id="btn-save-builtin-reversed"
+                                class="text-xs px-2 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded pointer-events-none transition-all">💾</button>
+                            <button onclick="restoreSingleBuiltin('reversed')"
+                                class="text-xs px-2 py-0.5 bg-purple-800 text-yellow-400 border border-purple-500 rounded hover:bg-purple-700 transition-all">↻</button>
+                        </div>
+                    </div>
+                    <textarea id="dict-edit-builtin-reversed"
+                        class="magic-input h-24 text-sm leading-relaxed opacity-60 pointer-events-none resize-none"
+                        readonly></textarea>
+                </div>
+
+                <div class="border border-purple-500/50 rounded-lg overflow-hidden bg-black/20">
+                    <div onclick="toggleDictCustomAccordion()"
+                        class="p-3 flex justify-between items-center cursor-pointer hover:bg-purple-800/40 active:bg-purple-800/60 select-none">
+                        <span class="text-sm text-yellow-300 font-bold">✨ 專屬個人筆記 (點擊展開/收合)</span>
+                        <span id="dict-custom-arrow"
+                            class="text-xs text-purple-300 transition-transform duration-200">▼</span>
+                    </div>
+
+                    <div id="dict-custom-content"
+                        class="hidden p-3 border-t border-purple-500/30 flex-col gap-4 bg-black/40 w-full">
+                        <div class="w-full flex flex-col shrink-0">
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-[0.7rem] text-green-400 font-bold">✍️ 個人筆記 - 正位</label>
+                                <div class="flex gap-1.5">
+                                    <button onclick="toggleCustomEdit('upright')" id="btn-edit-custom-upright"
+                                        class="text-[0.65rem] px-2 py-0.5 bg-purple-800 text-purple-200 border border-purple-500 rounded hover:text-white transition-all">✏️</button>
+                                    <button onclick="saveSingleCustom('upright')" id="btn-save-custom-upright"
+                                        class="text-[0.65rem] px-2 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded pointer-events-none transition-all">💾</button>
+                                </div>
+                            </div>
+                            <textarea id="dict-edit-custom-upright"
+                                class="magic-input h-24 text-sm leading-relaxed opacity-60 pointer-events-none resize-none"
+                                readonly placeholder="點擊上方 ✏️ 解鎖後即可輸入正位筆記..."></textarea>
+                        </div>
+
+                        <div class="w-full flex flex-col shrink-0">
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-[0.7rem] text-red-400 font-bold">✍️ 個人筆記 - 逆位</label>
+                                <div class="flex gap-1.5">
+                                    <button onclick="toggleCustomEdit('reversed')" id="btn-edit-custom-reversed"
+                                        class="text-[0.65rem] px-2 py-0.5 bg-purple-800 text-purple-200 border border-purple-500 rounded hover:text-white transition-all">✏️</button>
+                                    <button onclick="saveSingleCustom('reversed')" id="btn-save-custom-reversed"
+                                        class="text-[0.65rem] px-2 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded pointer-events-none transition-all">💾</button>
+                                </div>
+                            </div>
+                            <textarea id="dict-edit-custom-reversed"
+                                class="magic-input h-24 text-sm leading-relaxed opacity-60 pointer-events-none resize-none"
+                                readonly placeholder="點擊上方 ✏️ 解鎖後即可輸入逆位筆記..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="draw-ui" class="hidden flex flex-col items-center justify-center gap-4 pointer-events-none">
+        <div class="flex gap-4 pointer-events-auto">
+            <button id="btn-undo-draw" onclick="undoDrawCard()"
+                class="magic-btn py-2 px-6 text-sm bg-gray-800/80 border-gray-500 text-gray-300 backdrop-blur-md">
+                ↺ 撤回
+            </button>
+            <button id="btn-confirm-draw" onclick="confirmDrawCard()"
+                class="magic-btn shadow-[0_0_20px_rgba(253,224,71,0.3)] py-3 px-10 text-lg text-yellow-300 border-yellow-300 bg-purple-900/90 tracking-widest backdrop-blur-md">
+                ✨ 確定選取
+            </button>
+        </div>
+    </div>
+
+    <div id="custom-confirm-modal"
+        class="fixed inset-0 bg-black/80 z-[200] hidden items-center justify-center backdrop-blur-sm">
+        <div
+            class="bg-purple-900 border-2 border-yellow-400 p-6 rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.4)] max-w-sm w-[85%] text-center transform scale-95 transition-transform duration-200">
+            <p id="confirm-msg" class="text-white text-[15px] mb-6 font-bold tracking-wide leading-relaxed"></p>
+            <div class="flex justify-center gap-4">
+                <button id="btn-confirm-cancel"
+                    class="px-5 py-2 bg-gray-600 hover:bg-gray-500 rounded text-white text-sm font-bold transition-colors">取消</button>
+                <button id="btn-confirm-ok"
+                    class="px-5 py-2 bg-yellow-500 hover:bg-yellow-400 text-purple-900 rounded text-sm font-bold transition-colors">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="tool/jszip.min.js"></script>
+    <script src="tool/matter.min.js"></script>
+    <script src="tool/localforage.min.js"></script>
+    <script src="tarot_data.js"></script>
+    <script src="tarot_ui.js"></script>
+    <script src="tarot_engines.js"></script>
+    <script src="tarot_touch.js"></script>
+    <script type="module" src="sync_tarot.js"></script>
+
+    <script>
+        // 註冊 Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./tarot_sw.js')
+                    .then(registration => {
+                        console.log('Service Worker 註冊成功，範圍：', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker 註冊失敗：', error);
+                    });
+            });
+        }
+    </script>
+</body>
+
+</html>

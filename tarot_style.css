@@ -1,0 +1,545 @@
+/* --- 1. 核心版面與基礎設定 --- */
+body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: var(--app-height, 100dvh);
+    background-color: #1e1b4b;
+    background-image: var(--bg-img, radial-gradient(circle at 50% 50%, #2e1065 0%, #0f172a 100%));
+    background-size: cover;
+    background-position: center;
+    overflow: hidden;
+    touch-action: none;
+    font-family: 'Noto Sans TC', sans-serif;
+    color: white;
+}
+
+.screen {
+    display: none;
+    height: var(--app-height, 100dvh);
+    width: 100vw;
+    flex-direction: column;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 10;
+    overflow: hidden;
+}
+
+.screen.active {
+    display: flex !important;
+    flex-direction: column;
+}
+
+/* 全域封鎖透明方塊、系統選取框與高光閃爍 */
+* {
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-touch-callout: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    outline: none !important;
+}
+
+/* 例外處理：確保輸入框與備註區依然可以正常打字 */
+input,
+textarea,
+[contenteditable="true"] {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
+
+.content-scroll {
+    flex: 1;
+    overflow-y: auto;
+    width: 100%;
+    padding-bottom: 120px;
+    touch-action: pan-y;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- 2. 物理畫布與牌陣圖層 --- */
+#canvas-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    z-index: 20;
+    pointer-events: none;
+    touch-action: none;
+}
+
+#canvas-layer.active {
+    pointer-events: auto;
+}
+
+/* 確保物理畫布在非儀式期間不接收任何點擊 */
+#canvas-layer:not(.active) {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+#spread-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    z-index: 15;
+    pointer-events: none;
+    transition: opacity 0.5s;
+}
+
+/* --- 3. 塔羅牌視覺樣式 --- */
+.spread-slot {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 55px;
+    height: 95px;
+    border: 1px dashed rgba(216, 180, 254, 0.4);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    z-index: 5;
+}
+
+.spread-slot.active {
+    border: 1px solid #fde047;
+    box-shadow: 0 0 15px rgba(253, 224, 71, 0.6);
+    transform: translate(-50%, -50%) scale(1.05);
+}
+
+.flip-card {
+    background-color: transparent;
+    width: 100%;
+    height: 100%;
+    perspective: 1000px;
+    cursor: pointer;
+}
+
+.flip-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+}
+
+.flip-card.flipped .flip-card-inner {
+    transform: rotateY(180deg);
+}
+
+.flip-card-front,
+.flip-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 6px;
+    background-size: cover;
+    background-position: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.flip-card-front {
+    background-color: #581c87;
+    border: 1px solid #d8b4fe;
+}
+
+.flip-card-back {
+    background-color: #1e1b4b;
+    border: 1px solid #fde047;
+    transform: rotateY(180deg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- 4. 通用 UI 元件 (按鈕、輸入框、底部列) --- */
+.magic-btn {
+    background: rgba(88, 28, 135, 0.9);
+    border: 2px solid #d8b4fe;
+    border-radius: 999px;
+    font-weight: bold;
+    transition: all 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+    padding: 6px 12px !important; /* 優化壓扁擠出空間 */
+    font-size: 0.85rem !important;
+    min-width: 100px;
+}
+
+.magic-btn:active {
+    transform: scale(0.95);
+}
+
+.magic-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    filter: grayscale(50%);
+}
+
+.magic-input {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid #a855f7;
+    border-radius: 8px;
+    padding: 12px;
+    color: white;
+    width: 100%;
+    outline: none;
+}
+
+.bottom-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 12px;
+    background: rgba(30, 27, 75, 0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid #581c87;
+    display: flex;
+    justify-content: space-around;
+    z-index: 30;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* --- 5. 底部互動區塊 (解決洗牌穿透問題的關鍵) --- */
+#draw-ui,
+#ritual-ui {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px !important;
+    padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent) !important;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+#draw-ui>*,
+#ritual-ui>* {
+    pointer-events: auto;
+}
+
+/* --- 6. 自訂牌陣與阿卡西紀錄 --- */
+.history-spread-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 15px 10px;
+    padding: 20px 10px;
+    min-height: 220px !important;
+}
+
+.history-card {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    
+    /* ✨ 核心進化：動態寬度 */
+    /* 解釋：最小不低於 50px，最佳大小是螢幕寬度的 14% (14vw)，最大不超過 85px */
+    width: clamp(50px, 14vw, 85px) !important; 
+    height: auto !important; /* 高度交給比例自動運算 */
+    aspect-ratio: 60 / 105 !important; /* ✨ 完美鎖定塔羅牌比例 */
+    
+    background: #2e1065;
+    border: 1px solid #d8b4fe;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background-size: cover;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    z-index: 5;
+}
+
+.blueprint-grid {
+    background-color: #111827;
+    background-size: 20px 20px;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+}
+
+.builder-card {
+    position: absolute;
+    width: 50px;
+    height: 85px;
+    border: 2px dashed #fde047;
+    background: rgba(253, 224, 71, 0.2);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    transform: translate(-50%, -50%);
+    user-select: none;
+    touch-action: none;
+    cursor: grab;
+    z-index: 10;
+}
+
+.builder-card:active {
+    cursor: grabbing;
+    box-shadow: 0 0 15px #fde047;
+    z-index: 100;
+}
+
+/* --- 7. 動畫與特效系統 --- */
+#card-meaning-modal.active {
+    display: flex;
+    animation: popIn 0.3s forwards;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.pulse-anim {
+    animation: customPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes customPulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.05);
+    }
+}
+
+/* --- 8. 雷達與呼吸燈定位系統 --- */
+#global-breathing-light {
+    position: fixed;
+    top: env(safe-area-inset-top, 20px);
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: max-content;
+    max-width: 90vw !important;
+    z-index: 2000;
+    pointer-events: none;
+    transition: all 0.3s ease;
+    text-shadow: 0 0 10px rgba(253, 224, 71, 0.8);
+    font-size: clamp(12px, 4vw, 20px) !important; 
+    white-space: normal !important; 
+    word-break: keep-all !important; 
+    line-height: 1.4 !important; 
+    padding: 10px 20px !important;
+}
+
+#breathing-light-container {
+    position: fixed;
+    top: env(safe-area-inset-top, 20px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90vw;
+    max-width: 400px;
+    z-index: 2000;
+    pointer-events: none;
+}
+
+.breathing-text {
+    font-size: clamp(0.75rem, 4vw, 1rem);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 網格邊界：只改顏色不吃 SVG */
+#selection-boundary {
+    position: fixed;
+    border: 2px dashed rgba(216, 180, 254, 0.35);
+    border-radius: 12px;
+    background-color: rgba(0, 0, 0, 0.15);
+    box-shadow: inset 0 0 30px rgba(88, 28, 135, 0.2);
+    pointer-events: none;
+    z-index: 12;
+    opacity: 0;
+    transition: opacity 0.8s ease-in-out;
+    display: none;
+}
+
+/* 22張雷達完美定位 */
+.radar-22 {
+    width: 100vw !important;
+    height: 100dvh !important;
+    position: fixed !important;
+    top: 50px !important;      
+    left: 0 !important;
+    transform-origin: top center !important; 
+    transform: scale(0.09) !important;
+    background: rgba(0, 0, 0, 0.4) !important;
+    border-radius: 40px !important;
+    border: 2px solid rgba(255, 255, 255, 0.15) !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    z-index: 1000 !important;
+}
+
+/* 78張雷達完美定位 */
+.radar-78 {
+    width: 100vw !important;
+    height: 100dvh !important;
+    transform: scale(0.12) !important;
+    transform-origin: top right !important;
+    background: rgba(0, 0, 0, 0.4) !important;
+    border-radius: 40px !important;
+    border: 2px solid rgba(255, 255, 255, 0.15) !important;
+    margin-top: 10px !important;
+    margin-right: 10px !important;
+    right: 0 !important;
+    left: auto !important;
+}
+
+/* 78張專屬呼吸燈縮小靠邊 */
+.bl-78 {
+    position: fixed !important;
+    top: env(safe-area-inset-top, 5px) !important;
+    left: 1% !important;
+    right: auto !important;
+    margin: 0 !important;
+    transform: scale(0.65) !important;
+    transform-origin: top left !important;
+    z-index: 2000 !important;
+    padding: 4px 10px !important;
+}
+
+/* 任天堂 8-bit 風格的禁用狀態 */
+.btn-nintendo-disabled {
+    filter: grayscale(100%) contrast(1.2);
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0, 0, 0, 0.5) 4px, rgba(0, 0, 0, 0.5) 8px) !important;
+}
+
+/* ==========================================
+   ✨ 終極權重壓制：單牌模式專屬排版修復區
+   ========================================== */
+
+/* 1. 壓制歷史紀錄與新抽單牌的衝突，強制給予大尺寸與完美定位 */
+.history-spread-container .history-card.single-card-override {
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important; /* ✨ 修改：從 43% 改為 50%，達成垂直置中 */
+    
+    /* ✨ 核心修正：利用 translate(-50%, -50%) 讓卡牌的「正中心點」對齊螢幕的 (50%, 50%) */
+    transform: translate(-50%, -50%) !important; 
+    transform-origin: center center !important;
+    
+    /* ✨ 單張大牌的動態寬度（保留你原本漂亮的 clamp 設定） */
+    width: clamp(120px, 35vw, 200px) !important;
+    height: auto !important;
+    margin: 0 !important; /* 移除外距干擾 */
+}
+
+/* 2. 微調單牌放大後的上方文字標籤，防止擠壓變形 */
+.history-spread-container .history-card.single-card-override .text-yellow-300 {
+    margin-bottom: 12px !important;
+    font-size: 0.85rem !important;
+    letter-spacing: 0.05em;
+    opacity: 1 !important;
+}
+
+/* ✨ 修正版：在 CSS 檔案中只需要單斜線跳脫 */
+.history-card .aspect-\[60\/105\] {
+    height: 100% !important;
+}
+
+/* ==========================================
+   ✨ 介面微調區：解牌室問題選單與按鈕間距修復
+   ========================================== */
+/* 1. 壓制原本的 pb-24，大幅縮減選單區塊的底部留白，拉近與按鈕的距離 */
+#reading-footer-notes {
+    padding-bottom: 0rem !important; /* 原本是 pb-24 (96px)，縮小到 1rem (16px) */
+    margin-bottom: 0rem !important;
+}
+
+/* 2. 微調動態生成的展開選單 (<details>)，讓它「窄一點」 */
+#reading-footer-notes details {
+    margin-bottom: 0 !important;
+}
+
+/* 縮小標題 (summary) 的上下空間與字體 */
+#reading-footer-notes summary {
+    padding-top: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
+    font-size: 0.95rem !important;
+}
+
+/* 縮小展開後內容 (<p>) 的間距與字體 */
+#reading-footer-notes p {
+    margin-bottom: 0.25rem !important;
+    font-size: 0.9rem !important;
+}
+
+/* 3. 確保底部按鈕列不會被額外推開 */
+#screen-reading .bottom-bar {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.25rem !important; /* 🌟 縮小這裡的數值 (0.25rem 大約是 4px) */
+    margin-bottom: 0 !important;        /* 強制清除外邊距 */
+    bottom: 0 rem !important;          /* 🌟 如果你的 bottom-bar 是絕對定位，這行會直接把它往下拉 */
+}
+
+/* ==========================================
+   ✨ 解牌室：依序開牌動畫
+   ========================================== */
+@keyframes cardRevealAnim {
+    0% {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95); /* 從下方稍微縮小的地方浮出 */
+        filter: brightness(0.5); /* 剛出現時稍微暗一點 */
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: brightness(1);
+    }
+}
+
+/* ==========================================
+   ✨ 解牌室自適應放大系統及問題註解優化
+   ========================================== */
+.scale-spread-lg {
+    transform: scale(1.35); /* 放大 1.35 倍 */
+    margin-top: 15%;        /* 往下推一點，避免撞到標題 */
+}
+
+.scale-spread-md {
+    transform: scale(1.15); /* 放大 1.15 倍 */
+    margin-top: 10%;
+}
+
+.scale-spread-sm {
+    transform: scale(0.95); /* 原尺寸或微縮，確保大牌陣塞得下 */
+    margin-top: 5%;
+}
+
+#reading-footer-notes {
+    padding-bottom: 0 !important;
+    margin-bottom: 58px !important; /* 🌟 讓備註區的外距完美頂在底部固定按鈕列（高約50-56px）之上 */
+}
+
+#screen-reading .content-scroll {
+    padding-bottom: 70px !important; /* 縮小滾動層底部的留白 */
+}

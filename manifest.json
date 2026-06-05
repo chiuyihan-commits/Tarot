@@ -1,0 +1,21 @@
+{
+  "name": "口袋塔羅",
+  "short_name": "口袋塔羅",
+  "description": "專業級全螢幕沈浸式塔羅占卜系統",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "background_color": "#0f172a",
+  "theme_color": "#1e1b4b",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
