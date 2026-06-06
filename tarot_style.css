@@ -1,17 +1,25 @@
-/* --- 1. 核心版面與基礎設定 --- */
+/* ==========================================
+   ✨ 1. 核心版面與全局字體設定
+   ========================================== */
 body {
     margin: 0;
     padding: 0;
     width: 100vw;
     height: var(--app-height, 100dvh);
-    background-color: #1e1b4b;
+    background-color: #07050f; /* 深邃的宇宙黑紫底色 */
     background-image: var(--bg-img, radial-gradient(circle at 50% 50%, #2e1065 0%, #0f172a 100%));
     background-size: cover;
     background-position: center;
     overflow: hidden;
     touch-action: none;
-    font-family: 'Noto Sans TC', sans-serif;
+    font-family: 'Noto Serif TC', serif; /* 全面套用優雅的襯線體 */
     color: white;
+}
+
+/* 覆蓋 Tailwind 的無襯線設定 */
+h1, h2, h3, button {
+    font-family: 'Noto Serif TC', serif;
+    letter-spacing: 0.1em; /* 稍微拉開字距，增加儀式感 */
 }
 
 .screen {
@@ -41,9 +49,7 @@ body {
 }
 
 /* 例外處理：確保輸入框與備註區依然可以正常打字 */
-input,
-textarea,
-[contenteditable="true"] {
+input, textarea, [contenteditable="true"] {
     user-select: text !important;
     -webkit-user-select: text !important;
 }
@@ -52,7 +58,7 @@ textarea,
     flex: 1;
     overflow-y: auto;
     width: 100%;
-    padding-bottom: 120px;
+    padding-bottom: 70px !important; /* 配合底部選單的高度優化 */
     touch-action: pan-y;
 }
 
@@ -60,7 +66,101 @@ textarea,
     display: none !important;
 }
 
-/* --- 2. 物理畫布與牌陣圖層 --- */
+/* ==========================================
+   ✨ 2. 通用 UI 元件 (魔法按鈕、輸入框)
+   ========================================== */
+.magic-btn {
+    position: relative;
+    overflow: hidden;
+    font-weight: bold;
+    white-space: nowrap;
+    cursor: pointer;
+    padding: 6px 12px !important;
+    font-size: 0.85rem !important;
+    min-width: 100px;
+    border-radius: 0.75rem;
+    color: #fde047; /* 柔和的金色文字 */
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* 磨砂玻璃背景 (Glassmorphism) */
+    background: linear-gradient(135deg, rgba(88, 28, 135, 0.4) 0%, rgba(59, 7, 100, 0.8) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    
+    /* 仿古銅金屬邊框與柔和發光 */
+    border: 1px solid rgba(253, 224, 71, 0.4);
+    border-top: 1px solid rgba(253, 224, 71, 0.7);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+}
+
+.magic-btn:active {
+    transform: scale(0.96);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.6), inset 0 2px 10px rgba(0, 0, 0, 0.5);
+    border-color: rgba(253, 224, 71, 0.2);
+}
+
+.magic-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    filter: grayscale(50%);
+}
+
+.magic-input {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid #a855f7;
+    border-radius: 8px;
+    padding: 12px;
+    color: white;
+    width: 100%;
+    outline: none;
+}
+
+/* 文本發光流金特效 */
+.text-gold-glow {
+    color: transparent;
+    background: linear-gradient(to right, #fef08a, #d97706);
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 0 8px rgba(253, 224, 71, 0.4));
+}
+
+/* ==========================================
+   ✨ 3. 底部互動區塊 (選單與防穿透)
+   ========================================== */
+.bottom-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 12px;
+    background: rgba(30, 27, 75, 0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid #581c87;
+    display: flex;
+    justify-content: space-around;
+    z-index: 30;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+#draw-ui, #ritual-ui {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px !important;
+    padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent) !important;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+#draw-ui > *, #ritual-ui > * {
+    pointer-events: auto;
+}
+
+/* ==========================================
+   ✨ 4. 物理畫布與儀式桌面圖層
+   ========================================== */
 #canvas-layer {
     position: absolute;
     top: 0;
@@ -76,7 +176,6 @@ textarea,
     pointer-events: auto;
 }
 
-/* 確保物理畫布在非儀式期間不接收任何點擊 */
 #canvas-layer:not(.active) {
     display: none !important;
     pointer-events: none !important;
@@ -93,7 +192,9 @@ textarea,
     transition: opacity 0.5s;
 }
 
-/* --- 3. 塔羅牌視覺樣式 --- */
+/* ==========================================
+   ✨ 5. 塔羅牌視覺樣式 (桌面、歷史、解牌室)
+   ========================================== */
 .spread-slot {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -135,8 +236,7 @@ textarea,
     transform: rotateY(180deg);
 }
 
-.flip-card-front,
-.flip-card-back {
+.flip-card-front, .flip-card-back {
     position: absolute;
     width: 100%;
     height: 100%;
@@ -147,11 +247,7 @@ textarea,
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
 }
 
-.flip-card-front {
-    background-color: #581c87;
-    border: 1px solid #d8b4fe;
-}
-
+.flip-card-front { background-color: #581c87; border: 1px solid #d8b4fe; }
 .flip-card-back {
     background-color: #1e1b4b;
     border: 1px solid #fde047;
@@ -162,75 +258,7 @@ textarea,
     justify-content: center;
 }
 
-/* --- 4. 通用 UI 元件 (按鈕、輸入框、底部列) --- */
-.magic-btn {
-    background: rgba(88, 28, 135, 0.9);
-    border: 2px solid #d8b4fe;
-    border-radius: 999px;
-    font-weight: bold;
-    transition: all 0.2s;
-    white-space: nowrap;
-    cursor: pointer;
-    padding: 6px 12px !important; /* 優化壓扁擠出空間 */
-    font-size: 0.85rem !important;
-    min-width: 100px;
-}
-
-.magic-btn:active {
-    transform: scale(0.95);
-}
-
-.magic-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-    filter: grayscale(50%);
-}
-
-.magic-input {
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid #a855f7;
-    border-radius: 8px;
-    padding: 12px;
-    color: white;
-    width: 100%;
-    outline: none;
-}
-
-.bottom-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    padding: 12px;
-    background: rgba(30, 27, 75, 0.95);
-    backdrop-filter: blur(10px);
-    border-top: 1px solid #581c87;
-    display: flex;
-    justify-content: space-around;
-    z-index: 30;
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
-}
-
-/* --- 5. 底部互動區塊 (解決洗牌穿透問題的關鍵) --- */
-#draw-ui,
-#ritual-ui {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    padding: 10px !important;
-    padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent) !important;
-    z-index: 1000;
-    pointer-events: none;
-}
-
-#draw-ui>*,
-#ritual-ui>* {
-    pointer-events: auto;
-}
-
-/* --- 6. 自訂牌陣與阿卡西紀錄 --- */
+/* 解牌室與歷史紀錄區塊 */
 .history-spread-container {
     display: flex;
     flex-wrap: wrap;
@@ -244,13 +272,9 @@ textarea,
 .history-card {
     position: absolute;
     transform: translate(-50%, -50%);
-    
-    /* ✨ 核心進化：動態寬度 */
-    /* 解釋：最小不低於 50px，最佳大小是螢幕寬度的 14% (14vw)，最大不超過 85px */
     width: clamp(50px, 14vw, 85px) !important; 
-    height: auto !important; /* 高度交給比例自動運算 */
-    aspect-ratio: 60 / 105 !important; /* ✨ 完美鎖定塔羅牌比例 */
-    
+    height: auto !important; 
+    aspect-ratio: 60 / 105 !important;
     background: #2e1065;
     border: 1px solid #d8b4fe;
     border-radius: 6px;
@@ -264,69 +288,58 @@ textarea,
     z-index: 5;
 }
 
-.blueprint-grid {
-    background-color: #111827;
-    background-size: 20px 20px;
-    background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+.history-card .aspect-\[60\/105\] {
+    height: 100% !important;
 }
 
-.builder-card {
-    position: absolute;
-    width: 50px;
-    height: 85px;
-    border: 2px dashed #fde047;
-    background: rgba(253, 224, 71, 0.2);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    transform: translate(-50%, -50%);
-    user-select: none;
-    touch-action: none;
-    cursor: grab;
-    z-index: 10;
+/* 解牌室自適應放大系統 */
+.scale-spread-lg { transform: scale(1.35); margin-top: 15%; }
+.scale-spread-md { transform: scale(1.15); margin-top: 10%; }
+.scale-spread-sm { transform: scale(0.95); margin-top: 5%; }
+
+/* ==========================================
+   ✨ 6. 單牌模式專屬排版修復 (終極權重壓制)
+   ========================================== */
+.history-spread-container .history-card.single-card-override {
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important; 
+    transform: translate(-50%, -50%) !important; 
+    transform-origin: center center !important;
+    width: clamp(120px, 35vw, 200px) !important;
+    height: auto !important;
+    margin: 0 !important; 
 }
 
-.builder-card:active {
-    cursor: grabbing;
-    box-shadow: 0 0 15px #fde047;
-    z-index: 100;
+.history-spread-container .history-card.single-card-override .text-yellow-300 {
+    margin-bottom: 12px !important;
+    font-size: 0.85rem !important;
+    letter-spacing: 0.05em;
+    opacity: 1 !important;
 }
 
-/* --- 7. 動畫與特效系統 --- */
-#card-meaning-modal.active {
-    display: flex;
-    animation: popIn 0.3s forwards;
+/* ==========================================
+   ✨ 7. 解牌室問題選單與底部微調
+   ========================================== */
+#reading-footer-notes {
+    padding-bottom: 0 !important;
+    margin-bottom: 58px !important; /* 完美頂在底部固定按鈕列之上 */
 }
 
-@keyframes popIn {
-    from {
-        opacity: 0;
-        transform: scale(0.8);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
+#reading-footer-notes details { margin-bottom: 0 !important; }
+#reading-footer-notes summary { padding-top: 0.3rem !important; padding-bottom: 0.3rem !important; font-size: 0.95rem !important; }
+#reading-footer-notes p { margin-bottom: 0.25rem !important; font-size: 0.9rem !important; }
+
+#screen-reading .bottom-bar {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.25rem !important;
+    margin-bottom: 0 !important; 
+    bottom: 0 !important; 
 }
 
-.pulse-anim {
-    animation: customPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes customPulse {
-    0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-    50% {
-        opacity: 0.7;
-        transform: scale(1.05);
-    }
-}
-
-/* --- 8. 雷達與呼吸燈定位系統 --- */
+/* ==========================================
+   ✨ 8. 雷達與呼吸燈定位系統
+   ========================================== */
 #global-breathing-light {
     position: fixed;
     top: env(safe-area-inset-top, 20px);
@@ -365,7 +378,7 @@ textarea,
     text-overflow: ellipsis;
 }
 
-/* 網格邊界：只改顏色不吃 SVG */
+/* 網格邊界與雷達系統 */
 #selection-boundary {
     position: fixed;
     border: 2px dashed rgba(216, 180, 254, 0.35);
@@ -379,167 +392,92 @@ textarea,
     display: none;
 }
 
-/* 22張雷達完美定位 */
 .radar-22 {
-    width: 100vw !important;
-    height: 100dvh !important;
-    position: fixed !important;
-    top: 50px !important;      
-    left: 0 !important;
-    transform-origin: top center !important; 
-    transform: scale(0.09) !important;
-    background: rgba(0, 0, 0, 0.4) !important;
-    border-radius: 40px !important;
+    width: 100vw !important; height: 100dvh !important;
+    position: fixed !important; top: 50px !important; left: 0 !important;
+    transform-origin: top center !important; transform: scale(0.09) !important;
+    background: rgba(0, 0, 0, 0.4) !important; border-radius: 40px !important;
     border: 2px solid rgba(255, 255, 255, 0.15) !important;
-    pointer-events: none !important;
-    margin: 0 !important;
-    z-index: 1000 !important;
+    pointer-events: none !important; margin: 0 !important; z-index: 1000 !important;
 }
 
-/* 78張雷達完美定位 */
 .radar-78 {
-    width: 100vw !important;
-    height: 100dvh !important;
-    transform: scale(0.12) !important;
-    transform-origin: top right !important;
-    background: rgba(0, 0, 0, 0.4) !important;
-    border-radius: 40px !important;
+    width: 100vw !important; height: 100dvh !important;
+    transform: scale(0.12) !important; transform-origin: top right !important;
+    background: rgba(0, 0, 0, 0.4) !important; border-radius: 40px !important;
     border: 2px solid rgba(255, 255, 255, 0.15) !important;
-    margin-top: 10px !important;
-    margin-right: 10px !important;
-    right: 0 !important;
-    left: auto !important;
+    margin-top: 10px !important; margin-right: 10px !important;
+    right: 0 !important; left: auto !important;
 }
 
-/* 78張專屬呼吸燈縮小靠邊 */
 .bl-78 {
-    position: fixed !important;
-    top: env(safe-area-inset-top, 5px) !important;
-    left: 1% !important;
-    right: auto !important;
-    margin: 0 !important;
-    transform: scale(0.65) !important;
-    transform-origin: top left !important;
-    z-index: 2000 !important;
-    padding: 4px 10px !important;
+    position: fixed !important; top: env(safe-area-inset-top, 5px) !important;
+    left: 1% !important; right: auto !important; margin: 0 !important;
+    transform: scale(0.65) !important; transform-origin: top left !important;
+    z-index: 2000 !important; padding: 4px 10px !important;
 }
 
-/* 任天堂 8-bit 風格的禁用狀態 */
 .btn-nintendo-disabled {
-    filter: grayscale(100%) contrast(1.2);
-    opacity: 0.4;
-    cursor: not-allowed;
-    pointer-events: none;
+    filter: grayscale(100%) contrast(1.2); opacity: 0.4; cursor: not-allowed; pointer-events: none;
     background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0, 0, 0, 0.5) 4px, rgba(0, 0, 0, 0.5) 8px) !important;
 }
 
 /* ==========================================
-   ✨ 終極權重壓制：單牌模式專屬排版修復區
+   ✨ 9. 牌陣編輯器 (Blueprint)
    ========================================== */
-
-/* 1. 壓制歷史紀錄與新抽單牌的衝突，強制給予大尺寸與完美定位 */
-.history-spread-container .history-card.single-card-override {
-    position: absolute !important;
-    left: 50% !important;
-    top: 50% !important; /* ✨ 修改：從 43% 改為 50%，達成垂直置中 */
-    
-    /* ✨ 核心修正：利用 translate(-50%, -50%) 讓卡牌的「正中心點」對齊螢幕的 (50%, 50%) */
-    transform: translate(-50%, -50%) !important; 
-    transform-origin: center center !important;
-    
-    /* ✨ 單張大牌的動態寬度（保留你原本漂亮的 clamp 設定） */
-    width: clamp(120px, 35vw, 200px) !important;
-    height: auto !important;
-    margin: 0 !important; /* 移除外距干擾 */
+.blueprint-grid {
+    background-color: #111827;
+    background-size: 20px 20px;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
 }
 
-/* 2. 微調單牌放大後的上方文字標籤，防止擠壓變形 */
-.history-spread-container .history-card.single-card-override .text-yellow-300 {
-    margin-bottom: 12px !important;
-    font-size: 0.85rem !important;
-    letter-spacing: 0.05em;
-    opacity: 1 !important;
+.builder-card {
+    position: absolute; width: 50px; height: 85px;
+    border: 2px dashed #fde047; background: rgba(253, 224, 71, 0.2);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-weight: bold; transform: translate(-50%, -50%);
+    user-select: none; touch-action: none; cursor: grab; z-index: 10;
 }
 
-/* ✨ 修正版：在 CSS 檔案中只需要單斜線跳脫 */
-.history-card .aspect-\[60\/105\] {
-    height: 100% !important;
+.builder-card:active {
+    cursor: grabbing; box-shadow: 0 0 15px #fde047; z-index: 100;
 }
 
 /* ==========================================
-   ✨ 介面微調區：解牌室問題選單與按鈕間距修復
+   ✨ 10. 開場動畫 (Splash) 與特效 (Animations)
    ========================================== */
-/* 1. 壓制原本的 pb-24，大幅縮減選單區塊的底部留白，拉近與按鈕的距離 */
-#reading-footer-notes {
-    padding-bottom: 0rem !important; /* 原本是 pb-24 (96px)，縮小到 1rem (16px) */
-    margin-bottom: 0rem !important;
+/* GPU 硬體加速宣告 */
+#curtain-left, #curtain-right {
+    will-change: transform; 
+    transform: translateZ(0); 
+}
+#crystal-ball-container, #mandala-container {
+    will-change: transform, opacity;
 }
 
-/* 2. 微調動態生成的展開選單 (<details>)，讓它「窄一點」 */
-#reading-footer-notes details {
-    margin-bottom: 0 !important;
+/* 布簾拉開動畫 */
+.curtain-open #curtain-left { transform: translateX(-100%) skewX(-5deg); }
+.curtain-open #curtain-right { transform: translateX(100%) skewX(5deg); }
+
+/* 水晶球浮現動畫 */
+.curtain-open #crystal-ball-container { opacity: 1; transform: scale(1); }
+
+/* 其他特效 */
+#card-meaning-modal.active { display: flex; animation: popIn 0.3s forwards; }
+
+@keyframes popIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
 }
 
-/* 縮小標題 (summary) 的上下空間與字體 */
-#reading-footer-notes summary {
-    padding-top: 0.3rem !important;
-    padding-bottom: 0.3rem !important;
-    font-size: 0.95rem !important;
+.pulse-anim { animation: customPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@keyframes customPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
 }
 
-/* 縮小展開後內容 (<p>) 的間距與字體 */
-#reading-footer-notes p {
-    margin-bottom: 0.25rem !important;
-    font-size: 0.9rem !important;
-}
-
-/* 3. 確保底部按鈕列不會被額外推開 */
-#screen-reading .bottom-bar {
-    padding-top: 0.5rem !important;
-    padding-bottom: 0.25rem !important; /* 🌟 縮小這裡的數值 (0.25rem 大約是 4px) */
-    margin-bottom: 0 !important;        /* 強制清除外邊距 */
-    bottom: 0 rem !important;          /* 🌟 如果你的 bottom-bar 是絕對定位，這行會直接把它往下拉 */
-}
-
-/* ==========================================
-   ✨ 解牌室：依序開牌動畫
-   ========================================== */
 @keyframes cardRevealAnim {
-    0% {
-        opacity: 0;
-        transform: translateY(30px) scale(0.95); /* 從下方稍微縮小的地方浮出 */
-        filter: brightness(0.5); /* 剛出現時稍微暗一點 */
-    }
-    100% {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-        filter: brightness(1);
-    }
-}
-
-/* ==========================================
-   ✨ 解牌室自適應放大系統及問題註解優化
-   ========================================== */
-.scale-spread-lg {
-    transform: scale(1.35); /* 放大 1.35 倍 */
-    margin-top: 15%;        /* 往下推一點，避免撞到標題 */
-}
-
-.scale-spread-md {
-    transform: scale(1.15); /* 放大 1.15 倍 */
-    margin-top: 10%;
-}
-
-.scale-spread-sm {
-    transform: scale(0.95); /* 原尺寸或微縮，確保大牌陣塞得下 */
-    margin-top: 5%;
-}
-
-#reading-footer-notes {
-    padding-bottom: 0 !important;
-    margin-bottom: 58px !important; /* 🌟 讓備註區的外距完美頂在底部固定按鈕列（高約50-56px）之上 */
-}
-
-#screen-reading .content-scroll {
-    padding-bottom: 70px !important; /* 縮小滾動層底部的留白 */
+    0% { opacity: 0; transform: translateY(30px) scale(0.95); filter: brightness(0.5); }
+    100% { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1); }
 }
