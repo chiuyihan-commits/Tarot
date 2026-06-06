@@ -198,25 +198,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         history.replaceState({ screen: 'screen-home' }, '', window.location.pathname);
         sessionStorage.removeItem('is_soft_reload');
     } else {
-        // 冷啟動：華麗開場動畫
-        const splash = await DB.get('tarot_anim_splash');
-        const splashGif = document.getElementById('splash-gif');
-        if (splash && splashGif) {
-            splashGif.src = splash;
-            splashGif.classList.remove('hidden');
+        // ✨ 冷啟動：呼叫全新的神聖幾何與布簾開場動畫
+        if (typeof playSplashAnimation === 'function') {
+            playSplashAnimation();
+        } else {
+            // 防呆機制：如果沒載入動畫函數，直接進首頁
+            navTo('screen-home', false);
         }
-
-        setTimeout(() => {
-            const splashContent = document.getElementById('splash-content');
-            splashContent.addEventListener('transitionend', function onSplashFade(e) {
-                if (e.propertyName === 'opacity') {
-                    navTo('screen-home');
-                    splashContent.removeEventListener('transitionend', onSplashFade);
-                }
-            });
-            splashContent.style.opacity = 0;
-            if (splash && splashGif) splashGif.style.opacity = 0;
-        }, 2500);
     }
 
     // 6. 渲染歷史紀錄
@@ -1688,3 +1676,82 @@ if (!window.hasHistoryApiUpgraded) {
 
     window.hasHistoryApiUpgraded = true;
 }
+
+// 🎬 華麗開場動畫劇本 (大->小聚能，小->大綻放，尺寸優化版)
+window.playSplashAnimation = function() {
+    const splashScreen = document.getElementById('screen-splash');
+    const mandala = document.getElementById('mandala-container');
+    if (!splashScreen) return;
+
+    // ⏱️ 時間軸設定
+    const DRAW_SPEED = 30;          // 每畫一個殘影的速度 (毫秒)
+    const PHASE_1_FRAMES = 35;      // 階段一：往內縮聚能的數量
+    const PHASE_2_FRAMES = 20;      // 階段二：往外綻放的數量
+    const TOTAL_FRAMES = PHASE_1_FRAMES + PHASE_2_FRAMES; 
+    
+    const CRYSTAL_VIEW_TIME = 2000; // 布簾拉開後觀賞時間
+
+    if (mandala) {
+        mandala.innerHTML = ''; 
+        let currentFrame = 0;
+
+        const drawInterval = setInterval(() => {
+            if (currentFrame >= TOTAL_FRAMES) {
+                clearInterval(drawInterval);
+                setTimeout(() => {
+                    mandala.style.opacity = '0';
+                    splashScreen.classList.add('curtain-open');
+                }, 300);
+                return;
+            }
+
+            const square = document.createElement('div');
+            let scale, rotate, opacity;
+
+            // 🌀 動畫邏輯運算 (尺寸微調)
+            if (currentFrame < PHASE_1_FRAMES) {
+                // 【階段一：聚能】 從 1.4 倍縮小到 0.2 倍 (不會超出螢幕了)
+                scale = 1.4 - (currentFrame / PHASE_1_FRAMES) * 1.2; 
+                rotate = currentFrame * 15;
+                opacity = 1;
+            } else {
+                // 【階段二：綻放】 從 0.2 倍放大到 2.0 倍 (剛剛好填滿螢幕)
+                let exFrame = currentFrame - PHASE_1_FRAMES;
+                scale = 0.2 + (exFrame / PHASE_2_FRAMES) * 1.8; 
+                rotate = (PHASE_1_FRAMES * 15) - (exFrame * 20); 
+                opacity = 1 - (exFrame / PHASE_2_FRAMES); 
+            }
+            
+            // ✨ 設定方形初始外觀 (將原本的 w-56 h-56 縮小為 w-40 h-40)
+            square.className = 'absolute w-40 h-40 border border-yellow-300/50 transition-all ease-out';
+            square.style.transitionDuration = currentFrame < PHASE_1_FRAMES ? '800ms' : '400ms';
+            square.style.transform = `scale(1.4) rotate(0deg)`; // 初始比例對齊聚能第一幀
+            square.style.boxShadow = '0 0 15px rgba(253, 224, 71, 0.2)'; 
+            square.style.opacity = '0'; 
+
+            mandala.appendChild(square);
+
+            requestAnimationFrame(() => {
+                square.style.transform = `scale(${scale}) rotate(${rotate}deg)`;
+                square.style.opacity = opacity;
+            });
+
+            currentFrame++;
+        }, DRAW_SPEED);
+    } else {
+        splashScreen.classList.add('curtain-open');
+    }
+
+    // 🔮 最終幕退場
+    const totalTime = (TOTAL_FRAMES * DRAW_SPEED) + 300 + CRYSTAL_VIEW_TIME;
+    setTimeout(() => {
+        splashScreen.style.opacity = '0';
+        splashScreen.style.pointerEvents = 'none'; 
+        
+        setTimeout(() => {
+            splashScreen.classList.remove('active');
+            splashScreen.classList.add('hidden');
+            if (typeof navTo === 'function') navTo('screen-home', false);
+        }, 1000); 
+    }, totalTime); 
+};
