@@ -9,7 +9,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1e1b4b">
 
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="tarot_style.css">
 
     <script src="tool/tailwindcss.js"></script>
@@ -52,6 +52,7 @@
         </div>
 
     </div>
+
 
     <div id="screen-home" class="screen justify-center items-center p-6 bg-black/40 backdrop-blur-sm">
         <h1 class="text-5xl font-black text-yellow-300 mb-12 drop-shadow-lg text-center">口袋塔羅</h1>
@@ -344,9 +345,12 @@
                 <div class="p-3 bg-black/30 rounded border border-purple-500/50 space-y-3">
                     <p class="text-[0.8rem] font-bold text-yellow-300">🔗 自訂資料庫串接</p>
                     <div>
-                        <label class="block mb-1 text-[0.65rem] text-purple-200">Firebase API Key (覆蓋內建)</label>
-                        <input type="text" id="setting-firebase-key" class="magic-input text-xs"
-                            placeholder="若留空則使用系統內建 Key">
+                        <div class="flex justify-between items-center mb-1">
+    <label class="block text-[0.65rem] text-purple-200 mb-0">Firebase API Key (覆蓋內建)</label>
+    <span id="api-status-badge" class="px-1.5 py-0.5 rounded bg-gray-600 text-[0.6rem] text-white">檢查中...</span>
+</div>
+<input type="text" id="setting-firebase-key" class="magic-input text-xs"
+    placeholder="若留空則使用系統內建 Key">
                     </div>
                     <div>
                         <label class="block mb-1 text-[0.65rem] text-purple-200">Webhook / Web App URL</label>
