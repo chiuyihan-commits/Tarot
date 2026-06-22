@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { firebaseConfig as defaultConfig } from "./privatekey.js";
+import { firebaseConfig as defaultConfig } from "./krane_tarot_privatekey.js";
 
 // ==========================================
 // 🌌 系統初始化 (支援動態替換 API Key)
@@ -72,12 +72,13 @@ window.uploadEverything = async (allData) => {
 window.restoreSystemFromCloud = async function () {
     await initFirebaseSystem();
 
-    let isOk = await new Promise((resolve) => {
-        showConfirm("⚠️ 注意：這將使用雲端資料【完全覆蓋】目前手機上的所有紀錄與自訂牌義！\n\n確定要執行嗎？",
-            () => resolve(true),
-            () => resolve(false)
-        );
-    });
+    //let isOk = await new Promise((resolve) => {
+    //    showConfirm("⚠️ 注意：這將使用雲端資料【完全覆蓋】目前手機上的所有紀錄與自訂牌義！\n\n確定要執行嗎？",
+    //        () => resolve(true),
+    //        () => resolve(false)
+    //    );
+    //});
+    const isOk = window.confirm("⚠️ 極度危險！這將使用雲端資料【完全覆蓋】目前手機上的所有紀錄與自訂牌義！\n\n確定要執行嗎？");
     if (!isOk) return null;
 
     if (typeof showToast === 'function') showToast("⏳ 正在從阿卡西雲端下載資料...");
@@ -169,6 +170,21 @@ window.loadApiKeysToUI = async function () {
 
     if (fbInput) fbInput.value = fbKey;
     if (whInput) whInput.value = webhook;
+
+    // ✨ 新增：判斷金鑰狀態並更新 UI 標籤
+    const statusBadge = document.getElementById('api-status-badge');
+    if (statusBadge) {
+        if (fbKey && fbKey.trim() !== '') {
+            statusBadge.innerText = '🟢 已套用自訂金鑰';
+            statusBadge.className = 'px-1.5 py-0.5 rounded bg-green-600 text-[0.6rem] text-white';
+        } else if (defaultConfig && defaultConfig.apiKey) {
+            statusBadge.innerText = '🔵 使用內建金鑰';
+            statusBadge.className = 'px-1.5 py-0.5 rounded bg-blue-600 text-[0.6rem] text-white shadow-[0_0_8px_rgba(59,130,246,0.5)]';
+        } else {
+            statusBadge.innerText = '🔴 無可用金鑰';
+            statusBadge.className = 'px-1.5 py-0.5 rounded bg-red-600 text-[0.6rem] text-white';
+        }
+    }
 };
 
 // 🚨 覆寫/擴充你原本的 initSettingsUI，讓它開啟時順便載入 API 金鑰
