@@ -612,9 +612,6 @@ function showThreeWayConfirm(msg, onDiscard, onContinue, onSave) {
 }
 
 // ==========================================
-// ✨ 輕量提示系統 (Toast Notification)
-// ==========================================
-// ==========================================
 // ✨ 輕量提示系統 (智慧堆疊景深版)
 // ==========================================
 window.isRevertingSettings = false;
@@ -1138,14 +1135,14 @@ window.closeSubSettings = function (fromHistory = false) {
     }
 
     // 5. 判定完畢後，安全銷毀快照
-    currentSubSettingsSnapshot = null; 
+    currentSubSettingsSnapshot = null;
 };
 
 // ✨ 外殼轉接頭 (維持不變，負責掛載防彈鋼板)
 window.saveAndCloseSubSettings = function (e) {
     if (e) {
         e.preventDefault();
-        e.stopPropagation(); 
+        e.stopPropagation();
     }
     window.closeSubSettings(false);
 };
@@ -1361,19 +1358,43 @@ async function initDeckThemeSelect() {
 }
 
 // ============================================================================
-// 🛡️ 系統返回鍵 (popstate) 終極攔截器 (交通警察)
+// 🛡️ 系統返回鍵 (popstate) 終極攔截器 (物理靜止防禦升級版)
 // ============================================================================
+// 在監聽器外部宣告這兩個變數，用來記錄按下的時間與次數
+let lastPopstateTime = 0;
+let popstateSpamCount = 0;
 window.addEventListener('popstate', (e) => {
+    // 核心防禦：連續狂退偵測機制
+    const now = Date.now();
+    // 如果兩次按下返回鍵的時間間隔小於 400 毫秒
+    if (now - lastPopstateTime < 400) { 
+        popstateSpamCount++;
+        // 如果連續狂按達到 3 次 (代表使用者可能卡住了或在亂按)
+        if (popstateSpamCount >= 3) {
+            // 祭出底層原生 confirm 鎖死主執行緒
+            const forceExit = window.confirm("⚠️ 系統偵測到連續返回。\n\n目前的儀式可能已經中斷，是否要強制重整並回到首頁？");
+            if (forceExit) {
+                // 直接原地重載，清除所有殘留的記憶體與物理引擎狀態
+                window.location.href = window.location.origin + window.location.pathname;
+            }
+            popstateSpamCount = 0; // 重置計數
+            return; // 🛑 斬斷這次的 popstate，不讓下面的邏輯執行
+        }
+    } else {
+        // 如果時間間隔正常，代表是正常操作，重置狂按計數器
+        popstateSpamCount = 0; 
+    }
+    lastPopstateTime = now;
 
     // 🥇 第一優先級：絕對鎖定狀態 (開牌動畫中)
     if (typeof isCardRevealing !== 'undefined' && isCardRevealing) {
         history.pushState({ screen: 'screen-ritual' }, '', '#screen-ritual');
-        if (navigator.vibrate) navigator.vibrate(20);
-        return;
+        if (navigator.vibrate) navigator.vibrate(20); 
+        return; 
     }
 
     // 🥈 第二優先級：解牌室的「牌義解說視窗」是不是正打開著？
-    const meaningModal = document.getElementById('card-meaning-modal');
+    const meaningModal = document.getElementById('card-meaning-modal'); 
     if (meaningModal && !meaningModal.classList.contains('hidden')) {
         if (typeof closeCardMeaning === 'function') {
             closeCardMeaning();
@@ -1381,74 +1402,69 @@ window.addEventListener('popstate', (e) => {
             meaningModal.classList.add('hidden');
             meaningModal.classList.remove('flex');
         }
-        return;
+        return; 
     }
 
-    // 設定頁的子視窗是不是打開著？
+    // ✨ 🥈.5 優先級：設定頁的子視窗是不是打開著？
     const subSettingsOverlay = document.getElementById('sub-settings-overlay');
     if (subSettingsOverlay && !subSettingsOverlay.classList.contains('hidden')) {
         if (typeof closeSubSettings === 'function') {
-            closeSubSettings(true); // 傳入 true 告訴它這是手機返回鍵觸發的
+            closeSubSettings(true); 
         }
-        return;
+        return; 
     }
 
-    // ✨攔截抽牌設定的 Modal
-    const deckModal = document.getElementById('modal-deck');
-    if (deckModal && !deckModal.classList.contains('hidden')) {
-        deckModal.classList.add('hidden');
-        deckModal.classList.remove('flex');
-        return;
-    }
-
-    const spreadModal = document.getElementById('modal-spread');
-    if (spreadModal && !spreadModal.classList.contains('hidden')) {
-        spreadModal.classList.add('hidden');
-        spreadModal.classList.remove('flex');
-        return;
-    }
-
-    // 判斷百科全書的獨立牌義編輯視窗是不是打開著？
+    // 🥈.7 優先級：百科全書的獨立牌義編輯視窗是不是打開著？
     const dictEditModal = document.getElementById('modal-dict-edit');
     if (dictEditModal && !dictEditModal.classList.contains('hidden')) {
         if (typeof closeDictEdit === 'function') {
-            closeDictEdit(true); // 傳入 true 告訴視窗這是返回鍵觸發的，不需要重複執行 history.back()
+            closeDictEdit(true); 
         }
-        return; // 斷流，留在百科全書畫面
+        return; 
     }
 
     // 🥉 第三優先級：儀式進行中的「中斷確認」
     if (typeof isRitualActive !== 'undefined' && isRitualActive) {
-        // 🛑 核心修復：強制攔截！不讓底層第二個 popstate 監聽器執行畫面切換
-        e.stopImmediatePropagation();
+        // 1. 強制將網址拉回儀式狀態，防止連續狂退
+        history.pushState({ screen: 'screen-ritual' }, '', '#screen-ritual');
 
-        // 🔍 動態找出玩家現在正在哪個畫面 (解牌室還是洗牌桌？)
-        const activeScreen = document.querySelector('.screen.active');
-        const currentScreenId = activeScreen ? activeScreen.id : 'screen-ritual';
+        // 2. 🌟 核心防禦：立即凍結 Matter.js 物理引擎，防止卡牌在背景繼續飛竄、穿模或運算耗電
+        if (typeof Runner !== 'undefined' && typeof runner !== 'undefined') {
+            try {
+                Runner.stop(runner);
+            } catch (err) {
+                console.warn("暫停物理引擎時略過無害異常:", err);
+            }
+        }
 
-        // 將正確的畫面重新推回歷史紀錄，確保不會退回上一步
-        history.pushState({ screen: currentScreenId, sessionId: window.appSessionId }, '', `#${currentScreenId}`);
-
-        // 跳出確認視窗
-        showConfirm('目前的占卜尚未儲存，確定要中斷並放棄紀錄嗎？',
-            () => {
-                // 點確定：解除儀式防護罩，直接重新載入網頁回到首頁
-                isRitualActive = false;
-                window.location.href = window.location.origin + window.location.pathname;
-            },
-            () => {
-                // 點取消(繼續)：什麼都不做，因為網址與畫面都已經被我們鎖在原處了
+        // 3. 彈出確認視窗，智慧分流確定/取消動作
+        showConfirm('儀式正在進行中，確定要結束占卜回到首頁嗎？', 
+            () => { 
+                // 點擊【確定】：直接去原地重載大掃除（abort 裡面也有安全網）
+                if (typeof abortRitualAndGoHome === 'function') abortRitualAndGoHome();
+            }, 
+            () => { 
+                // 點擊【取消】：恢復物理引擎運作，讓卡牌繼續暢快飛行
+                if (typeof Runner !== 'undefined' && typeof runner !== 'undefined' && typeof engine !== 'undefined') {
+                    try {
+                        Runner.start(runner, engine);
+                    } catch (err) {
+                        console.error("重啟物理引擎失敗:", err);
+                    }
+                }
             }
         );
-        return;
+        return; 
     }
 
-    // 🌟 第三優先級：正常情況下的畫面切換 (防呆終極版！)
-    // 嚴格確保 screenId 絕對不會是 undefined！只要沒有正常畫面，一律安全送回首頁！
-    const screenId = (e.state && e.state.screen) ? e.state.screen : 'screen-home';
-
+    // 🌟 優先級 4：正常情況下的畫面切換 (防呆終極版)
+    let screenId = 'screen-home';
+    if (e.state && e.state.screen && document.getElementById(e.state.screen)) {
+        screenId = e.state.screen;
+    }
+    
     if (typeof originalNavTo === 'function') {
-        originalNavTo(screenId, false);
+        originalNavTo(screenId, false); 
     } else if (typeof navTo === 'function') {
         navTo(screenId, false);
     }
@@ -1658,7 +1674,22 @@ if (!window.hasHistoryApiUpgraded) {
             spreadModal.classList.add('hidden'); spreadModal.classList.remove('flex');
             return;
         }
+        // ✨ 新增：攔截首頁返回並觸發退出確認
+        const activeScreen = document.querySelector('.screen.active');
+        if (activeScreen && activeScreen.id === 'screen-home' && (!e.state || e.state.screen !== 'screen-home')) {
+            // 把歷史推回去，阻止預設的瀏覽器退出行為
+            history.pushState({ screen: 'screen-home', sessionId: window.appSessionId }, '', '#screen-home');
 
+            //離開確認視窗(已取消)
+            //showConfirm('🔮 確定要結束儀式並離開口袋塔羅嗎？', () => {
+            //    playCurtainCloseAnimationAndExit();
+            //});
+            // 2. 直接呼叫華麗的關閉動畫與退出函數 (拔除 showConfirm)
+            if (typeof playCurtainCloseAnimationAndExit === 'function') {
+                playCurtainCloseAnimationAndExit();
+            }
+            return; // 斷流
+        }
         // 🌟 3. 歷史紀錄過期攔截器 (斷尾求生核心) 🌟
         if (e.state && e.state.sessionId && e.state.sessionId !== window.appSessionId) {
             // 系統發現這是一筆「上一輪占卜」的舊紀錄
@@ -1678,7 +1709,7 @@ if (!window.hasHistoryApiUpgraded) {
 }
 
 // 🎬 華麗開場動畫劇本 (大->小聚能，小->大綻放，尺寸優化版)
-window.playSplashAnimation = function() {
+window.playSplashAnimation = function () {
     const splashScreen = document.getElementById('screen-splash');
     const mandala = document.getElementById('mandala-container');
     if (!splashScreen) return;
@@ -1687,12 +1718,12 @@ window.playSplashAnimation = function() {
     const DRAW_SPEED = 30;          // 每畫一個殘影的速度 (毫秒)
     const PHASE_1_FRAMES = 35;      // 階段一：往內縮聚能的數量
     const PHASE_2_FRAMES = 20;      // 階段二：往外綻放的數量
-    const TOTAL_FRAMES = PHASE_1_FRAMES + PHASE_2_FRAMES; 
-    
+    const TOTAL_FRAMES = PHASE_1_FRAMES + PHASE_2_FRAMES;
+
     const CRYSTAL_VIEW_TIME = 2000; // 布簾拉開後觀賞時間
 
     if (mandala) {
-        mandala.innerHTML = ''; 
+        mandala.innerHTML = '';
         let currentFrame = 0;
 
         const drawInterval = setInterval(() => {
@@ -1711,23 +1742,23 @@ window.playSplashAnimation = function() {
             // 🌀 動畫邏輯運算 (尺寸微調)
             if (currentFrame < PHASE_1_FRAMES) {
                 // 【階段一：聚能】 從 1.4 倍縮小到 0.2 倍 (不會超出螢幕了)
-                scale = 1.4 - (currentFrame / PHASE_1_FRAMES) * 1.2; 
+                scale = 1.4 - (currentFrame / PHASE_1_FRAMES) * 1.2;
                 rotate = currentFrame * 15;
                 opacity = 1;
             } else {
                 // 【階段二：綻放】 從 0.2 倍放大到 2.0 倍 (剛剛好填滿螢幕)
                 let exFrame = currentFrame - PHASE_1_FRAMES;
-                scale = 0.2 + (exFrame / PHASE_2_FRAMES) * 1.8; 
-                rotate = (PHASE_1_FRAMES * 15) - (exFrame * 20); 
-                opacity = 1 - (exFrame / PHASE_2_FRAMES); 
+                scale = 0.2 + (exFrame / PHASE_2_FRAMES) * 1.8;
+                rotate = (PHASE_1_FRAMES * 15) - (exFrame * 20);
+                opacity = 1 - (exFrame / PHASE_2_FRAMES);
             }
-            
+
             // ✨ 設定方形初始外觀 (將原本的 w-56 h-56 縮小為 w-40 h-40)
             square.className = 'absolute w-40 h-40 border border-yellow-300/50 transition-all ease-out';
             square.style.transitionDuration = currentFrame < PHASE_1_FRAMES ? '800ms' : '400ms';
             square.style.transform = `scale(1.4) rotate(0deg)`; // 初始比例對齊聚能第一幀
-            square.style.boxShadow = '0 0 15px rgba(253, 224, 71, 0.2)'; 
-            square.style.opacity = '0'; 
+            square.style.boxShadow = '0 0 15px rgba(253, 224, 71, 0.2)';
+            square.style.opacity = '0';
 
             mandala.appendChild(square);
 
@@ -1746,12 +1777,44 @@ window.playSplashAnimation = function() {
     const totalTime = (TOTAL_FRAMES * DRAW_SPEED) + 300 + CRYSTAL_VIEW_TIME;
     setTimeout(() => {
         splashScreen.style.opacity = '0';
-        splashScreen.style.pointerEvents = 'none'; 
-        
+        splashScreen.style.pointerEvents = 'none';
+
         setTimeout(() => {
             splashScreen.classList.remove('active');
             splashScreen.classList.add('hidden');
             if (typeof navTo === 'function') navTo('screen-home', false);
-        }, 1000); 
-    }, totalTime); 
+        }, 1000);
+    }, totalTime);
+};
+
+// 🎬 華麗謝幕：布簾關閉與退出程式
+window.playCurtainCloseAnimationAndExit = function () {
+    const splashScreen = document.getElementById('screen-splash');
+    if (!splashScreen) {
+        window.close();
+        return;
+    }
+
+    // 1. 隱藏其他介面，確保畫面純淨
+    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+
+    // 2. 喚醒開場動畫用的布簾容器
+    splashScreen.classList.remove('hidden');
+    splashScreen.style.opacity = '1';
+    splashScreen.style.pointerEvents = 'auto'; // 封鎖點擊防護
+
+    // 3. 延遲一下讓 DOM 吃到顯示狀態，再拔掉 curtain-open 來觸發 CSS 的關門動畫
+    setTimeout(() => {
+        splashScreen.classList.remove('curtain-open');
+
+        // 4. 等待 1.5 秒布簾完全關上後，嘗試關閉 PWA 或網頁
+        setTimeout(() => {
+            try {
+                window.close(); // 嘗試呼叫瀏覽器原生關閉
+            } catch (e) { }
+
+            // 若環境不允許 window.close (如 iOS Safari)，則以文字畫面優雅收尾
+            document.body.innerHTML = '<div style="display:flex; height:100dvh; width:100vw; background:black; color:#d8b4fe; justify-content:center; align-items:center; font-size:1.2rem; letter-spacing:0.3em; font-family:\'Noto Serif TC\', serif; font-weight:bold;">✨ 儀式圓滿結束 ✨</div>';
+        }, 1500); // 對應 CSS 裡的 duration-[1.5s]
+    }, 50);
 };
