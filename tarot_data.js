@@ -40,6 +40,7 @@ const DB = {
             await localforage.setItem(`tarot_${key}`, value);
         } catch (err) {
             console.error(`儲存 ${key} 失敗:`, err);
+            window.alert("⚠️ 系統警告：資料寫入失敗！\n您的設備儲存空間可能已滿，或是瀏覽器阻擋了本地儲存。請檢查後再繼續操作，以免流失紀錄。");
         }
     },
     async remove(key) {
