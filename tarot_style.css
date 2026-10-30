@@ -11,7 +11,7 @@ body {
     background-size: cover;
     background-position: center;
     overflow: hidden;
-    touch-action: none;
+    touch-action: manipulation;
     font-family: 'Noto Serif TC', serif; /* 全面套用優雅的襯線體 */
     color: white;
 }
@@ -274,19 +274,15 @@ input, textarea, [contenteditable="true"] {
     transform: translate(-50%, -50%);
     width: clamp(50px, 14vw, 85px) !important; 
     height: auto !important; 
-    aspect-ratio: 60 / 105 !important;
-    background: #2e1065;
-    border: 1px solid #d8b4fe;
-    border-radius: 6px;
+    /* ✨ 刪除鎖死比例與背景框，讓它變成一個隨內容伸縮的隱形保護盒 */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
-    background-size: cover;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
     z-index: 5;
 }
+/* 註：內部的 reading-flip 已經自帶陰影與邊框，所以外框不需要再設定 */
 
 .history-card .aspect-\[60\/105\] {
     height: 100% !important;
@@ -481,3 +477,118 @@ input, textarea, [contenteditable="true"] {
     0% { opacity: 0; transform: translateY(30px) scale(0.95); filter: brightness(0.5); }
     100% { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1); }
 }
+
+/* ✨ 物理引擎與儀式桌面專屬防護罩：禁止原生縮放與滑動，確保洗牌拖曳絕對順暢 */
+#canvas-layer,
+#screen-ritual,
+#screen-manual-shuffle {
+    touch-action: none !important;
+}
+
+/* ✨ 解牌室與歷史紀錄區：徹底解放，允許自由滑動與雙指縮放看清楚文字 */
+#screen-reading,
+#screen-history {
+    touch-action: auto !important;
+}
+
+/* 牌陣卡牌修改時的震動效果 */
+.modifying-shake {
+    animation: shakeEffect 0.3s ease-in-out infinite;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+    border: 1px solid rgba(239, 68, 68, 0.8) !important;
+    cursor: pointer;
+}
+
+@keyframes shakeEffect {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    20% { transform: translate(-1px, 1px) rotate(-1deg); }
+    40% { transform: translate(1px, -1px) rotate(1deg); }
+    60% { transform: translate(-1px, -1px) rotate(0deg); }
+    80% { transform: translate(1px, 1px) rotate(1deg); }
+    100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+/* ==========================================
+   ✨ 11. 大型牌陣：自適應純文字模式
+   ========================================== */
+.text-only-mode .history-card [id^="reading-flip-"] {
+    display: none !important; /* 隱藏圖片實體 */
+}
+
+.text-only-mode .history-card {
+    width: auto !important;
+    min-width: 80px;
+    z-index: 50 !important;
+}
+
+.text-only-mode .history-card [id^="reading-text-"] {
+    transform: scale(1.15); /* 放大文字框 */
+    background-color: rgba(30, 27, 75, 0.95) !important; /* 加深背景，凸顯文字 */
+    border: 1px solid #facc15 !important; /* 加上金邊 */
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* 在文字模式下，隱藏上方多餘的位置標籤，讓畫面更純淨 */
+.text-only-mode .history-card [id^="reading-label-"] {
+    display: none !important;
+}
+
+/* ==========================================
+   ✨ 11. 大型牌陣：自適應純文字模式 (CSS Grid 融合版)
+   ========================================== */
+
+/* 1. 父容器切換為 Grid 響應式排版，自動換行並均分空間 */
+.text-only-mode.history-spread-container {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)) !important;
+    gap: 8px !important;
+    justify-content: center;
+    align-content: start;
+    padding: 10px !important;
+}
+
+/* 2. 隱藏圖片實體，並解除卡牌的絕對定位，讓它順應 Grid 排列 */
+.text-only-mode .history-card [id^="reading-flip-"] {
+    display: none !important; 
+}
+
+.text-only-mode .history-card {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    min-width: 0 !important; 
+    margin: 0 !important;
+    z-index: 50 !important;
+}
+
+/* 3. 動態壓縮內距與文字大小，外框變成按鈕質感 */
+.text-only-mode .history-card [id^="reading-text-"] {
+    transform: none !important; /* 拔除原本的放大 */
+    background-color: rgba(30, 27, 75, 0.95) !important;
+    border: 1px solid #facc15 !important;
+    padding: 8px 4px !important; /* 左右內距壓縮，適應多牌陣 */
+    border-radius: 6px !important;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6) !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 2px !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* 控制圖文模式的顯示切換 */
+.text-only-mode .image-mode-text { display: none !important; }
+.text-only-mode .text-mode-text { display: flex !important; }
+
+/* 隱藏原本上方多餘的位置標籤 */
+.text-only-mode .history-card [id^="reading-label-"] {
+    display: none !important;
+}
+
+/* 微調字型大小以防破版 */
+.text-only-mode .history-card [id^="reading-text-"] .text-xs { font-size: 0.65rem !important; }
+.text-only-mode .history-card [id^="reading-text-"] .text-sm { font-size: 0.8rem !important; }

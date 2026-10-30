@@ -1,29 +1,29 @@
 /* ==========================================================================
-   ✨ 數位塔羅祭壇 - 終極效能優化版物理引擎核心 (tarot_engines_optimized.js)
+   ✨ 數位塔羅祭壇-終極效能優化版物理引擎核心 (tarot_engines_optimized.js)
    ========================================================================== */
 const { Engine, Render, Runner, Bodies, Composite, Mouse, MouseConstraint, Events, Query } = Matter;
 const engine = Engine.create({
-    enableSleeping: true 
+    enableSleeping: true
 });
-const world = engine.world; 
-engine.gravity.y = 0; 
+const world = engine.world;
+engine.gravity.y = 0;
 engine.gravity.x = 0;
 
-const container = document.getElementById('canvas-container'); 
-let width = window.innerWidth; 
+const container = document.getElementById('canvas-container');
+let width = window.innerWidth;
 let height = window.innerHeight;
 
-const render = Render.create({ 
-    element: container, 
-    engine: engine, 
-    options: { 
-        width: width, 
-        height: height, 
-        background: 'transparent', 
-        wireframes: false, 
+const render = Render.create({
+    element: container,
+    engine: engine,
+    options: {
+        width: width,
+        height: height,
+        background: 'transparent',
+        wireframes: false,
         showSleeping: false,
         pixelRatio: Math.min(window.devicePixelRatio, 2)
-    } 
+    }
 });
 Render.run(render);
 
@@ -32,28 +32,34 @@ Runner.start(runner, engine);
 
 document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
-        Runner.stop(runner); 
+        Runner.stop(runner);
     } else {
-        Runner.start(runner, engine); 
+        Runner.start(runner, engine);
     }
 });
 
-let cards = []; 
-let currentState = 'IDLE'; 
-let spreadSlots = []; 
-let drawnCount = 0; 
+let cards = [];
+let currentState = 'IDLE';
+let spreadSlots = [];
+let drawnCount = 0;
 let selectedCard = null;
 let walls = [];
 let shuffleIdleTimer = null;
-let drawnCardsStack = []; 
+let drawnCardsStack = [];
 
 let physicsFrameCount = 0;
+
+// ✨ 效能優化：裝置偵測與動態物理降頻常數
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const ZSORT_INTERVAL = isMobile ? 15 : 5;       // Z軸排序頻率
+const REPULSION_INTERVAL = isMobile ? 6 : 2;    // 排斥力場觸發頻率
+const REPULSION_PAIRS = isMobile ? 15 : 30;     // 每次隨機抽樣的排斥對數
 
 const shuffleZone = {
     x: 0,
     y: 0,
     width: width,
-    height: height, 
+    height: height,
     centerX: width / 2,
     centerY: height / 2
 };
@@ -72,7 +78,7 @@ function updateWalls() {
 
     const wallThick = 500;
     walls = [
-        Bodies.rectangle(width / 2, shuffleZone.top - wallThick / 2, width * 2, wallThick, { isStatic: true, render: { visible: false } }),
+        Bodies.rectangle(width / 2, shuffleZone.top-wallThick / 2, width * 2, wallThick, { isStatic: true, render: { visible: false } }),
         Bodies.rectangle(width / 2, shuffleZone.bottom + wallThick / 2, width * 2, wallThick, { isStatic: true, render: { visible: false } }),
         Bodies.rectangle(-wallThick / 2, height / 2, wallThick, height * 2, { isStatic: true, render: { visible: false } }),
         Bodies.rectangle(width + wallThick / 2, height / 2, wallThick, height * 2, { isStatic: true, render: { visible: false } })
@@ -102,22 +108,22 @@ window.addEventListener('resize', () => {
         cards.forEach(card => {
             if (card.position.x < 0 || card.position.x > width || card.position.y < 0 || card.position.y > height) {
                 Matter.Body.setPosition(card, { x: safeX, y: safeY });
-                Matter.Body.setVelocity(card, { x: 0, y: 0 }); 
+                Matter.Body.setVelocity(card, { x: 0, y: 0 });
             }
         });
 
         if (currentState === 'SELECTING' || currentState === 'FANNING') {
             if (typeof currentRitualData !== 'undefined' && currentRitualData.spread === 'single') {
-                stackSpread(); 
+                stackSpread();
             } else {
-                fanSpread();   
+                fanSpread();
             }
         }
     }, 300);
 });
 
 function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
+    for (let i = array.length-1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [array[i], array[j]] = [array[j], array[i]];
     }
@@ -126,25 +132,42 @@ function shuffleArray(array) {
 
 let currentRealDeck = [];
 function startRitual() {
-    resetRitualEngineContext(); 
+    resetRitualEngineContext();
+    // ✨ 新增防呆：檢查自訂張數牌陣是否超過當前牌組大小
+    if (currentSelectedSpread && currentSelectedSpread.startsWith('custom_dynamic_')) {
+        const count = parseInt(currentSelectedSpread.replace('custom_dynamic_', ''));
+        if (count > currentSelectedDeckSize) {
+            if (typeof showToast === 'function') {
+                showToast(`⚠️ 牌陣張數 (${count}張) 超過目前牌組上限 (${currentSelectedDeckSize}張)，請重新設定牌陣！`);
+            }
+            return;
+        }
+    }
     isRitualActive = true;
-    if (typeof BL !== 'undefined' && currentState !== 'SELECTING') BL.clear();
-    
+    if (typeof BL !== 'undefined' && (typeof currentState === 'undefined' || currentState !== 'SELECTING')) BL.clear();
+
     const overlay = document.getElementById('pre-shuffle-overlay');
-    overlay.classList.remove('hidden'); 
+    overlay.classList.remove('hidden');
     overlay.classList.add('flex');
 
     setTimeout(async () => {
-        overlay.classList.remove('flex'); 
+        overlay.classList.remove('flex');
         overlay.classList.add('hidden');
 
-        currentRitualData = { 
-            id: Date.now().toString(), 
-            date: new Date().toLocaleString('zh-TW'), 
-            question: document.getElementById('input-question').value || '無', 
-            spread: currentSelectedSpread, 
-            cards: [], 
-            notes: '' 
+        // ✨ 動態抓取當前使用的牌組名稱
+        const currentTheme = await DB.get('deck_theme', 'cards');
+        const themeList = await DB.get('deck_theme_list', [{ name: '經典萊德偉特', id: 'cards' }, { name: '托特塔羅牌', id: 'thoth' }]);
+        const themeObj = themeList.find(t => t.id === currentTheme) || themeList[0];
+
+        currentRitualData = {
+            id: Date.now().toString(),
+            date: new Date().toLocaleString('zh-TW'),
+            question: document.getElementById('input-question').value || '無',
+            spread: currentSelectedSpread,
+            mainDeckId: themeObj.id,     // ✨ 記錄主牌組 ID
+            mainDeckName: themeObj.name, // ✨ 記錄主牌組名稱
+            cards: [],
+            notes: ''
         };
 
         currentRealDeck = shuffleArray(await generateBaseDeck(currentSelectedDeckSize));
@@ -152,7 +175,7 @@ function startRitual() {
         const doShuffle = val !== 'false' && val !== false;
 
         if (doShuffle) {
-            currentState = 'SHUFFLING'; 
+            currentState = 'SHUFFLING';
             initManualShuffleScreen();
         } else {
             proceedToNextStage();
@@ -181,29 +204,29 @@ async function proceedToNextStage() {
         currentState = 'GATHERING';
         cards.forEach((card, i) => {
             Matter.Body.setStatic(card, true);
-            card.targetPos = { x: width / 2 - (i * 0.2), y: shuffleZone.centerY - (i * 0.2) };
+            card.targetPos = { x: width / 2-(i * 0.2), y: shuffleZone.centerY-(i * 0.2) };
             card.targetAngle = 0;
             card.isAnimating = true;
         });
-        
+
         // ✨ 加上 async，才能在裡面用 await 讀取設定
         setTimeout(async () => {
             currentState = 'GATHERED';
-            
+
             // ✨ 讀取你要切幾疊 (預設 3)
-            window.currentMaxCutPiles = await DB.get('cut_piles_count', 3); 
+            window.currentMaxCutPiles = await DB.get('cut_piles_count', 3);
 
             if (doCut) {
                 document.getElementById('cut-modal').classList.remove('hidden');
                 document.getElementById('cut-modal').classList.add('flex');
-                
-                BL.show('cut_1'); 
+
+                BL.show('cut_1');
                 // ✨ 動態覆寫文字，告訴玩家總共要切幾疊
                 const blEl = document.getElementById('global-breathing-light');
                 if (blEl) blEl.innerText = `請點擊牌堆 (需切出 ${window.currentMaxCutPiles} 疊)`;
-                
-                cutPiles = [[...cards]]; 
-                cutsMade = 0; 
+
+                cutPiles = [[...cards]];
+                cutsMade = 0;
                 renderCutPiles();
             } else {
                 performAutoCutAndSpread();
@@ -217,10 +240,19 @@ let chaosVortexStartTime = 0;
 
 function triggerChaosShuffle() {
     if (currentState !== 'SHUFFLING' && currentState !== 'SHUFFLING_INWARD') return;
-    triggerHaptic();
+
+    if (typeof triggerHaptic === 'function') triggerHaptic();
+
     chaosVortexActive = true;
     chaosVortexStartTime = Date.now();
-    setTimeout(() => { chaosVortexActive = false; }, 1500);
+
+    // ✨ 喚醒所有可能已經進入睡眠的卡牌，確保它們能接收到推力
+    cards.forEach(c => Matter.Sleeping.set(c, false));
+
+    // ✨ 優化：將原本沉重的 1500 毫秒改為 250 毫秒的「短促脈衝」，大幅降低 CPU 負載
+    setTimeout(() => {
+        chaosVortexActive = false;
+    }, 250);
 }
 
 // ==========================================
@@ -238,10 +270,10 @@ async function initManualShuffleScreen() {
     navTo('screen-manual-shuffle');
     BL.show('manual_shuffle');
     manualShuffleCount = 0;
-    
+
     // ✨ 從資料庫抓取目標次數，如果沒設定過就預設為 3
-    targetShuffleCount = await DB.get('min_shuffle_count', 3); 
-    
+    targetShuffleCount = await DB.get('min_shuffle_count', 3);
+
     updateManualUI();
 
     const container = document.getElementById('manual-deck-container');
@@ -250,7 +282,7 @@ async function initManualShuffleScreen() {
 
     // ✨ 完美 1:1 對應實際牌數，並動態計算間距讓牌堆維持大約 200px 高
     const totalCards = currentRealDeck.length;
-    const sliceSpacing = 200 / totalCards;
+    const sliceSpacing = totalCards === 22 ? 6 : 4;
 
     for (let i = 0; i < totalCards; i++) {
         let cardSlice = document.createElement('div');
@@ -272,15 +304,28 @@ async function initManualShuffleScreen() {
         lastDeltaY = 0;
 
         const rect = container.getBoundingClientRect();
-        const clickRatio = 1 - ((e.clientY - rect.top) / rect.height);
+        
+        // ======= 【完美融合版：鐘形曲線洗牌抓取】 =======
+        let clickRatio = 1 - ((e.clientY - rect.top) / rect.height);
+        if (clickRatio > 1) clickRatio = 1;
+        if (clickRatio < 0) clickRatio = 0;
 
-        // 抓取 35% ~ 65% 的牌
-        const grabPercent = 0.35 + (Math.random() * 0.3);
-        const grabCount = Math.floor(totalCards * grabPercent);
+        // ✨ 導入鐘形曲線 (Sine Wave)：中心點為 1，兩側邊緣平滑遞減至 0
+        const bellCurveFactor = Math.sin(clickRatio * Math.PI); 
 
-        // 確保不會一鍋端
+        // 基礎保底抓取 10%，加上鐘形加成最多 45% (總和最高 55%)，並保留微小的隨機手感
+        const grabPercent = 0.10 + (bellCurveFactor * 0.45) + (Math.random() * 0.1);
+        let grabCount = Math.floor(totalCards * grabPercent);
+
+        // ✨ 最低保底 1 張，確保邊緣依然有動作
+        if (grabCount < 1) grabCount = 1;
+        
         let startIndex = Math.floor(clickRatio * totalCards) - Math.floor(grabCount / 3);
+        
+        // ✨ 防呆修復 2：限制抓取起點的上下限！
         startIndex = Math.max(0, startIndex);
+        startIndex = Math.min(totalCards-1, startIndex); // 絕對不能超過陣列最後一張牌
+
         const endIndex = Math.min(totalCards, startIndex + grabCount);
 
         draggedBlock = [];
@@ -293,14 +338,22 @@ async function initManualShuffleScreen() {
             }
         });
 
+        // ✨ 終極防呆 3：如果因為某種神奇原因陣列還是空的，強制抓起最後一張牌！
+        if (draggedBlock.length === 0 && container.lastChild) {
+            const topCard = container.lastChild;
+            topCard.style.transition = 'none';
+            topCard.style.zIndex = '100';
+            draggedBlock.push(topCard);
+        }
+
         if (draggedBlock.length > 0 && navigator.vibrate) navigator.vibrate(10);
     };
 
     container.onpointermove = (e) => {
         if (!isDraggingBlock || draggedBlock.length === 0) return;
-        // ✨ 解鎖左右自由拖曳！
-        lastDeltaX = e.clientX - startX;
-        lastDeltaY = e.clientY - startY;
+        // 解鎖左右自由拖曳！
+        lastDeltaX = e.clientX-startX;
+        lastDeltaY = e.clientY-startY;
         draggedBlock.forEach(child => {
             child.style.transform = `translate(${lastDeltaX}px, ${lastDeltaY}px)`;
         });
@@ -329,7 +382,7 @@ function endManualDrag() {
     const startIndex = parseInt(draggedBlock[0].dataset.index);
     const count = draggedBlock.length;
 
-    // ✨ 1:1 直接對應，不用再做任何比例換算了！
+    // 1:1 直接對應，不用再做任何比例換算了！
     const movedCards = currentRealDeck.splice(startIndex, count);
 
     let insertIndex = currentRealDeck.length;
@@ -337,37 +390,38 @@ function endManualDrag() {
         // 依照目前的牌數，決定失誤交錯的最大張數 (78張最多錯5張，22張最多錯3張)
         const maxError = currentRealDeck.length > 30 ? 5 : 3;
         const errorOffset = Math.floor(Math.random() * maxError) + 1;
-        insertIndex = Math.max(0, currentRealDeck.length - errorOffset);
+        insertIndex = Math.max(0, currentRealDeck.length-errorOffset);
     }
     currentRealDeck.splice(insertIndex, 0, ...movedCards);
 
     const container = document.getElementById('manual-deck-container');
     const staticCards = Array.from(container.children).filter(c => !draggedBlock.includes(c));
-    const sliceSpacing = 200 / currentRealDeck.length;
+    
+    // ✨ 修復 sliceSpacing 比例尺 (與上方 init 統一)
+    const sliceSpacing = currentRealDeck.length === 22 ? 6 : 4;
 
     draggedBlock.forEach((child, i) => {
         child.style.transition = 'all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)';
-        child.style.transform = `translate(0px, -220px) rotate(${Math.random() * 6 - 3}deg)`;
-
+        child.style.transform = `translate(0px, -240px) rotate(${Math.random() * 6-3}deg)`;
         setTimeout(() => {
             child.style.transform = `translate(0px, 0px) rotate(0deg)`;
             const isInterleaving = Math.random() > 0.3;
 
             if (isInterleaving && staticCards.length > 5) {
-                const targetIdx = staticCards.length - 1 - Math.floor(Math.random() * 5);
+                const targetIdx = staticCards.length-1-Math.floor(Math.random() * 5);
                 const targetCard = staticCards[targetIdx];
                 child.style.zIndex = targetIdx + 1;
                 // 動態取得間距的一半作為插隊的縫隙
                 child.style.bottom = `${parseInt(targetCard.style.bottom) + (sliceSpacing / 2)}px`;
             } else {
-                const topCard = staticCards[staticCards.length - 1];
+                const topCard = staticCards[staticCards.length-1];
                 child.style.zIndex = 100 + i;
                 child.style.bottom = topCard ? `${parseInt(topCard.style.bottom) + (i * sliceSpacing)}px` : `${i * sliceSpacing}px`;
             }
 
             if (navigator.vibrate) navigator.vibrate(5);
 
-            if (i === draggedBlock.length - 1) {
+            if (i === draggedBlock.length-1) {
                 setTimeout(() => rebuildManualDOM(), 400);
             }
         }, 400);
@@ -379,26 +433,26 @@ function endManualDrag() {
 
 function updateManualUI() {
     const countEl = document.getElementById('manual-shuffle-count');
-    
+
     // ✨ 終極防呆邏輯 1：如果現在洗的次數超過目標，分母就跟著變大 (例如洗 4 次就變 4/4)
     const displayDenominator = Math.max(targetShuffleCount, manualShuffleCount);
-    
+
     if (countEl) countEl.innerText = `已洗牌：${manualShuffleCount} / ${displayDenominator}`;
 
     const btn = document.getElementById('btn-enter-wash');
     if (!btn) return;
-    
+
     if (manualShuffleCount >= targetShuffleCount) {
         btn.disabled = false;
         btn.classList.remove('opacity-30', 'cursor-not-allowed');
         btn.classList.add('opacity-100', 'animate-pulse', 'shadow-[0_0_20px_rgba(253,224,71,0.6)]');
-        
+
         // ✨ 終極防呆邏輯 2：剛好達標的「那一次」，直接竄改呼吸燈文字！
         // (註：按鈕顯示是「進入展牌」，所以文字搭配按鈕)
         if (manualShuffleCount === targetShuffleCount) {
             const blEl = document.getElementById('global-breathing-light');
             if (blEl && !blEl.classList.contains('hidden')) {
-                blEl.innerText = '可繼續洗牌，或點擊「進入搓牌」'; 
+                blEl.innerText = '可繼續洗牌，或點擊「進入搓牌」';
             }
         }
     } else {
@@ -454,15 +508,10 @@ async function transitionToWash() {
 // ✨ 完美雷達比例修復 (必須加上 async)
 async function buildSpread(type) {
     const layer = document.getElementById('spread-layer');
-    layer.innerHTML = ''; 
-    spreadSlots = []; 
+    layer.innerHTML = '';
+    spreadSlots = [];
     drawnCount = 0;
-    
-    if (currentRitualData.spread === 'single') {
-        layer.style.display = 'none';
-        spreadSlots = [{ el: document.createElement('div') }];
-        return;
-    }
+
     layer.style.cssText = 'position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 15; pointer-events: none; opacity: 0; transition: opacity 0.5s;';
 
     const positions = await getSpreadPositionsPercentages(type, 'radar');
@@ -497,9 +546,9 @@ async function initPhysicsDeck(logicalDeck) {
         }
     }, 50);
 
-    shuffleZone.width = width; 
+    shuffleZone.width = width;
     shuffleZone.height = height;
-    shuffleZone.centerX = width / 2; 
+    shuffleZone.centerX = width / 2;
     shuffleZone.centerY = height / 2;
 
     const currentTheme = await DB.get('deck_theme', 'cards');
@@ -517,7 +566,7 @@ async function initPhysicsDeck(logicalDeck) {
             resolve();
         };
         img.onerror = () => {
-            useImage = false; 
+            useImage = false;
             resolve();
         };
         img.src = customCardBack;
@@ -544,12 +593,12 @@ async function initPhysicsDeck(logicalDeck) {
             bodyW, bodyH,
             {
                 frictionAir: 0.04,
-                friction: 0.02, 
+                friction: 0.02,
                 restitution: 0.3,
                 density: 0.002,
-                isStatic: true, 
-                collisionFilter: { group: -1 }, 
-                render: renderConfig            
+                isStatic: true,
+                collisionFilter: { group: -1 },
+                render: renderConfig
             }
         );
         Matter.Body.setAngle(card, Math.random() > 0.5 ? Math.PI : 0);
@@ -571,7 +620,7 @@ Events.on(engine, 'beforeUpdate', () => {
     const cy = shuffleZone.centerY;
 
     const maxRadiusX = width * 0.45;
-    const maxRadiusY = (shuffleZone.bottom - shuffleZone.top) * 0.45;
+    const maxRadiusY = (shuffleZone.bottom-shuffleZone.top) * 0.45;
 
     if (currentState === 'SELECTING' && selectedCard === null && physicsFrameCount % 10 !== 0) {
         return;
@@ -579,14 +628,37 @@ Events.on(engine, 'beforeUpdate', () => {
 
     const doRepulsion = (currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD');
 
+    // ✨ 優化 2 & 3：將排斥力場從 forEach 抽離，改為「全域隨機抽樣」並套用「動態降頻」
+    if (doRepulsion && physicsFrameCount % REPULSION_INTERVAL === 0) {
+        // 限制抽樣數量，最多不超過牌數的 40% 或設定的上限
+        const count = Math.min(REPULSION_PAIRS, Math.floor(cards.length * 0.4));
+
+        for (let i = 0; i < count; i++) {
+            const a = cards[Math.floor(Math.random() * cards.length)];
+            const b = cards[Math.floor(Math.random() * cards.length)];
+
+            if (a === b) continue;
+
+            const dx = a.position.x-b.position.x;
+            const dy = a.position.y-b.position.y;
+            const rDistSq = dx * dx + dy * dy;
+
+            if (rDistSq < 900 && rDistSq > 0) {
+                const rDist = Math.sqrt(rDistSq);
+                const force = (30-rDist) * 0.000001;
+                Matter.Body.applyForce(a, a.position, { x: (dx / rDist) * force, y: (dy / rDist) * force });
+            }
+        }
+    }
+
     cards.forEach((card, index) => {
         if (card.isAnimating && card.targetPos) {
-            Matter.Body.setPosition(card, { 
-                x: card.position.x + (card.targetPos.x - card.position.x) * 0.18, 
-                y: card.position.y + (card.targetPos.y - card.position.y) * 0.18 
+            Matter.Body.setPosition(card, {
+                x: card.position.x + (card.targetPos.x-card.position.x) * 0.18,
+                y: card.position.y + (card.targetPos.y-card.position.y) * 0.18
             });
-            if (card.targetAngle !== null) Matter.Body.setAngle(card, card.angle + (card.targetAngle - card.angle) * 0.18);
-            Matter.Body.setVelocity(card, { x: 0, y: 0 }); 
+            if (card.targetAngle !== null) Matter.Body.setAngle(card, card.angle + (card.targetAngle-card.angle) * 0.18);
+            Matter.Body.setVelocity(card, { x: 0, y: 0 });
             Matter.Body.setAngularVelocity(card, 0);
             return;
         }
@@ -597,7 +669,7 @@ Events.on(engine, 'beforeUpdate', () => {
                 card.render.sprite.xScale = card.baseSpriteScaleX * scale;
                 card.render.sprite.yScale = card.baseSpriteScaleY * scale;
             }
-            card.zVelocity *= 0.82; 
+            card.zVelocity *= 0.82;
             if (card.zVelocity < 0.005) {
                 card.zVelocity = 0;
                 if (card.render.sprite && card.render.sprite.texture) {
@@ -608,73 +680,67 @@ Events.on(engine, 'beforeUpdate', () => {
         }
 
         if (currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD') {
-            let dx = card.position.x - cx;
-            let dy = card.position.y - cy;
+            let dx = card.position.x-cx;
+            let dy = card.position.y-cy;
+
+            // ✨ 建立總合向量，取代瘋狂呼叫 applyForce
+            let totalForceX = 0;
+            let totalForceY = 0;
+
+            // ① 外圍拉回
             let distRatio = Math.sqrt((dx * dx) / (maxRadiusX * maxRadiusX) + (dy * dy) / (maxRadiusY * maxRadiusY));
-
             if (distRatio > 0.78) {
-                let pull = 0.0003 * (distRatio - 0.78);
-                Matter.Body.applyForce(card, card.position, { x: -dx * pull, y: -dy * pull });
+                let pull = 0.0003 * (distRatio-0.78);
+                totalForceX += -dx * pull;
+                totalForceY += -dy * pull;
             }
 
-            // ✨ 修復 2：刪除了強制的向心收攏，改為輕微的流體空氣阻力，讓牌洗完維持散開，等待玩家雙手捏合
+            // ② SHUFFLING_INWARD 阻尼
             if (currentState === 'SHUFFLING_INWARD') {
-                Matter.Body.applyForce(card, card.position, { x: -card.velocity.x * 0.005, y: -card.velocity.y * 0.005 });
+                totalForceX += -card.velocity.x * 0.005;
+                totalForceY += -card.velocity.y * 0.005;
             }
 
+            // ③ 手指力場
             if (window.fingerDrag && window.fingerDrag.active) {
-                let fx = card.position.x - window.fingerDrag.x;
-                let fy = card.position.y - window.fingerDrag.y;
+                let fx = card.position.x-window.fingerDrag.x;
+                let fy = card.position.y-window.fingerDrag.y;
                 let fDistSq = fx * fx + fy * fy;
 
                 if (fDistSq < 45000) {
-                    Matter.Sleeping.set(card, false); 
-                    let influence = 1 - (Math.sqrt(fDistSq) / 210);
-                    let pushX = window.fingerDrag.dx * 0.000035 * influence;
-                    let pushY = window.fingerDrag.dy * 0.000035 * influence;
-                    
+                    Matter.Sleeping.set(card, false);
+                    let influence = 1-(Math.sqrt(fDistSq) / 210);
+                    totalForceX += window.fingerDrag.dx * 0.000035 * influence;
+                    totalForceY += window.fingerDrag.dy * 0.000035 * influence;
+
                     let swirlX = -fy * 0.000025 * influence;
                     let swirlY = fx * 0.000025 * influence;
+                    totalForceX += swirlX;
+                    totalForceY += swirlY;
 
-                    Matter.Body.applyForce(card, card.position, { x: pushX + swirlX, y: pushY + swirlY });
-                    Matter.Body.setAngularVelocity(card, card.angularVelocity + (pushX * fy - pushY * fx) * 0.05);
-                    if (Math.random() > 0.85) card.zScore += 10;
+                    Matter.Body.setAngularVelocity(card, card.angularVelocity + (totalForceX * fy-totalForceY * fx) * 0.05);
+                    if (Math.random() > 0.85) card.zScore += (Math.random()-0.5) * 30;
                 }
             }
 
+            // ④ 漩渦切線力
             if (chaosVortexActive) {
                 let dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 5) {
-                    // ✨ 修復 1：改為單一且溫和的切線推力，拔除向心力，消除物理向量對抗導致的「兩坨節點」現象
-                    let speedFactor = 0.00006 * card.mass; 
-                    let tangentX = -dy * speedFactor;
-                    let tangentY = dx * speedFactor;
+                    let speedFactor = 0.00006 * card.mass;
+                    totalForceX += -dy * speedFactor;
+                    totalForceY += dx * speedFactor;
 
-                    Matter.Body.applyForce(card, card.position, { x: tangentX, y: tangentY });
-                    
                     if (physicsFrameCount % 5 === 0) {
-                        card.zScore += (Math.random() - 0.2) * 5;
-                        Matter.Body.setAngularVelocity(card, (Math.random() - 0.5) * 0.05);
+                        card.zScore += (Math.random()-0.2) * 5;
+                        Matter.Body.setAngularVelocity(card, (Math.random()-0.5) * 0.05);
                     }
                 }
             }
 
-            if (doRepulsion && physicsFrameCount % 2 === 0) {
-                for (let k = 0; k < 3; k++) {
-                    let randIdx = Math.floor(Math.random() * cards.length);
-                    if (randIdx !== index) {
-                        let other = cards[randIdx];
-                        let rx = card.position.x - other.position.x;
-                        let ry = card.position.y - other.position.y;
-                        let rDistSq = rx * rx + ry * ry;
-                        
-                        if (rDistSq < 900 && rDistSq > 0) { 
-                            let rDist = Math.sqrt(rDistSq);
-                            let force = (30 - rDist) * 0.000001; 
-                            Matter.Body.applyForce(card, card.position, { x: (rx / rDist) * force, y: (ry / rDist) * force });
-                        }
-                    }
-                }
+            // ✨ 最後一步：將所有計算好的力場，一次性施加給卡牌！
+            if (totalForceX !== 0 || totalForceY !== 0) {
+                Matter.Body.applyForce(card, card.position, { x: totalForceX, y: totalForceY });
             }
 
             const maxVel = 18;
@@ -683,10 +749,11 @@ Events.on(engine, 'beforeUpdate', () => {
         }
     });
 
-    if ((currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD') && physicsFrameCount % 5 === 0) {
-        cards.sort((a, b) => a.zScore - b.zScore);
+    // ✨ 優化 1：套用動態 Z 軸降頻排序
+    if ((currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD') && physicsFrameCount % ZSORT_INTERVAL === 0) {
+        cards.sort((a, b) => a.zScore-b.zScore);
         cards.forEach((c, i) => c.zDepth = i);
-        engine.world.bodies.sort((a, b) => (a.zScore || -99999) - (b.zScore || -99999));
+        engine.world.bodies.sort((a, b) => (a.zScore || -99999)-(b.zScore || -99999));
     }
 
     if (currentState === 'FANNING') {
@@ -694,37 +761,39 @@ Events.on(engine, 'beforeUpdate', () => {
         for (let i = 0; i < cards.length; i++) {
             const card = cards[i];
             if (card.targetPos) {
-                const dx = card.targetPos.x - card.position.x;
-                const dy = card.targetPos.y - card.position.y;
+                const dx = card.targetPos.x-card.position.x;
+                const dy = card.targetPos.y-card.position.y;
                 if (dx * dx + dy * dy > 30) { allSettled = false; break; }
             }
         }
 
         if (!this.fanningTimer) this.fanningTimer = Date.now();
-        if (Date.now() - this.fanningTimer > 2200) allSettled = true; 
+        if (Date.now()-this.fanningTimer > 2200) allSettled = true;
 
         if (allSettled) {
-            this.fanningTimer = null; 
+            this.fanningTimer = null;
             currentState = 'SELECTING';
-            
+
             cards.forEach(c => Matter.Body.setStatic(c, true));
 
-            const isSingle = currentRitualData.spread === 'single';
+            // ✨ 判斷是否為單張直接抽模式
+            const isSingleDirect = currentRitualData.spread === 'single' && window.singleDrawStyle === 'direct';
+
             const drawUi = document.getElementById('draw-ui');
             if (drawUi) {
-                if (isSingle) drawUi.classList.add('hidden');
-                else drawUi.classList.remove('hidden'); 
+                if (isSingleDirect) drawUi.classList.add('hidden'); // 直接抽隱藏底部按鈕
+                else drawUi.classList.remove('hidden'); // 攤開抽則顯示底部按鈕
             }
 
-            if (!isSingle && typeof updateDrawButtons === 'function') updateDrawButtons();
+            if (!isSingleDirect && typeof updateDrawButtons === 'function') updateDrawButtons();
 
             const spreadLayer = document.getElementById('spread-layer');
             if (spreadLayer) {
-                if (isSingle) {
+                if (isSingleDirect) {
                     spreadLayer.style.display = 'none';
                 } else {
                     spreadLayer.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2000; transition: opacity 0.5s; pointer-events: none;';
-                    spreadLayer.className = cards.length === 78 ? 'radar-78' : 'radar-22';
+                    spreadLayer.className = cards.length > 30 ? 'radar-78' : 'radar-22';
                     spreadLayer.style.opacity = '1';
 
                     spreadSlots.forEach(s => {
@@ -747,17 +816,17 @@ Events.on(engine, 'beforeUpdate', () => {
                 globalBL.style.cssText = '';
                 globalBL.className = 'text-xl font-bold text-yellow-300 drop-shadow-md text-center whitespace-nowrap bg-black/50 px-6 py-2 rounded-full backdrop-blur-sm border border-yellow-500/30';
 
-                if (isSingle) {
+                if (isSingleDirect) {
                     globalBL.classList.add('fixed', 'left-1/2', '-translate-x-1/2', 'top-24');
                     BL.show('draw_place', '神諭即將展現...');
                     setTimeout(() => {
                         if (cards.length > 0 && drawnCount === 0) {
-                            selectedCard = cards[cards.length - 1];
+                            selectedCard = cards[cards.length-1];
                             if (typeof confirmDrawCard === 'function') confirmDrawCard();
                         }
                     }, 1200);
                 } else {
-                    if (cards.length === 78) globalBL.classList.add('bl-78');
+                    if (cards.length > 30) globalBL.classList.add('bl-78');
                     else globalBL.classList.add('fixed', 'left-1/2', '-translate-x-1/2', 'top-24');
                     getDrawPromptText(drawnCount).then(txt => BL.show('draw_place', txt));
                 }
@@ -767,7 +836,7 @@ Events.on(engine, 'beforeUpdate', () => {
 });
 
 // 【更新】：華麗的隨機炸開前置動畫 (取代舊版螺旋，更適合麻將洗牌)
-function triggerRadialShuffle(isAuto = false) { 
+function triggerRadialShuffle(isAuto = false) {
     if (currentState !== 'STACKED') return;
     currentState = 'SHUFFLING';
 
@@ -785,7 +854,7 @@ function triggerRadialShuffle(isAuto = false) {
             card.isAnimating = false;
             Matter.Body.setStatic(card, false);
             if (card.collisionFilter) card.collisionFilter.group = -1;
-            Matter.Body.setVelocity(card, { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 4 });
+            Matter.Body.setVelocity(card, { x: (Math.random()-0.5) * 4, y: (Math.random()-0.5) * 4 });
         }, 800);
     });
 
@@ -814,7 +883,7 @@ function resetShuffleIdleTimer() {
 document.getElementById('btn-finish-shuffle').addEventListener('click', () => {
     if (currentState !== 'SHUFFLING' && currentState !== 'SHUFFLING_INWARD') return;
     clearTimeout(shuffleIdleTimer);
-    if (typeof BL !== 'undefined' && currentState !== 'SELECTING') {
+    if (typeof BL !== 'undefined' && (typeof currentState === 'undefined' || currentState !== 'SELECTING')) {
         BL.clear();
     }
 
@@ -834,7 +903,8 @@ document.getElementById('btn-finish-shuffle').addEventListener('click', () => {
     BL.show('shuffle_idle', '向心收攏');
 });
 
-document.getElementById('btn-gather').addEventListener('click', () => {
+// ✨ 核心修復：在這個 () 的前面補上 async！
+document.getElementById('btn-gather').addEventListener('click', async () => {
     if (currentState !== 'SHUFFLING' && currentState !== 'SHUFFLING_INWARD') return;
     currentState = 'GATHERING';
     clearTimeout(shuffleIdleTimer);
@@ -842,18 +912,24 @@ document.getElementById('btn-gather').addEventListener('click', () => {
         BL.clear();
     }
 
-    // ✨ 新增：隱藏下方的整個按鈕列
     document.getElementById('ritual-ui').classList.add('hidden');
+
+    // ✨ 這裡使用了 await，所以外層一定要是 async () => 
+    const currentTheme = await DB.get('deck_theme', 'cards');
 
     cards.forEach(card => {
         let normalizedAngle = card.angle % (2 * Math.PI);
         if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
-        card.tarotData.isReversed = (normalizedAngle > Math.PI / 2) && (normalizedAngle < 3 * Math.PI / 2);
 
-        // 【關鍵修復】：重新啟動卡牌的動畫馬達，並清空所有的亂數推力
+        // 智慧判斷：如果是托特牌 (thoth)，強制為正位 (false)
+        if (currentTheme === 'thoth') {
+            card.tarotData.isReversed = false;
+        } else {
+            card.tarotData.isReversed = (normalizedAngle > Math.PI / 2) && (normalizedAngle < 3 * Math.PI / 2);
+        }
+
         card.isAnimating = true;
         Matter.Body.setStatic(card, true);
-        // ✨ 核心修復 2-1：收牌時重新關閉碰撞，讓卡牌可以完美重疊疊好
         if (card.collisionFilter) card.collisionFilter.group = -1;
         card.targetAngle = 0;
         card.zVelocity = 0;
@@ -861,103 +937,188 @@ document.getElementById('btn-gather').addEventListener('click', () => {
     });
 
     // 按照深度排好序，避免收牌時穿模
-    cards.sort((a, b) => a.zDepth - b.zDepth);
+    cards.sort((a, b) => a.zDepth-b.zDepth);
     cards.forEach((card, i) => {
-        card.targetPos = { x: width / 2 - (i * 0.2), y: shuffleZone.centerY - (i * 0.2) };
+        card.targetPos = { x: width / 2-(i * 0.2), y: shuffleZone.centerY-(i * 0.2) };
     });
 
-    setTimeout(async () => { // ✨ callback 改為 async
+    setTimeout(async () => { 
         currentState = 'GATHERED';
 
-        // ✨ 非同步讀取切牌設定
         const valCut = await DB.get('stage_cut', true);
         const doCut = valCut !== 'false' && valCut !== false;
 
         if (doCut) {
-            document.getElementById('cut-modal').classList.remove('hidden');
-            document.getElementById('cut-modal').classList.add('flex');
-            BL.show('cut_1');
-            cutPiles = [[...cards]];
-            cutsMade = 0;
-            renderCutPiles();
+            await initCutModal();
         } else {
             performAutoCutAndSpread();
         }
     }, 1000);
 });
 
-let cutPiles = []; 
+let cutPiles = [];
 let cutsMade = 0;
 document.getElementById('btn-cut-fan').addEventListener('click', () => {
     if (currentState !== 'GATHERED') return;
-    document.getElementById('cut-modal').classList.remove('hidden'); 
+    document.getElementById('cut-modal').classList.remove('hidden');
     document.getElementById('cut-modal').classList.add('flex');
-    BL.show('cut_1'); 
-    cutPiles = [[...cards]]; 
-    cutsMade = 0; 
+    BL.show('cut_1');
+    cutPiles = [[...cards]];
+    cutsMade = 0;
     renderCutPiles();
 });
 
 function renderCutPiles() {
-    const cutArea = document.getElementById('cut-area'); 
+    const cutArea = document.getElementById('cut-area');
     cutArea.innerHTML = '';
     cutPiles.forEach((pile, pileIndex) => {
-        const pileDiv = document.createElement('div'); 
+        const pileDiv = document.createElement('div');
         pileDiv.className = 'w-24 flex flex-col-reverse items-center transition-transform';
         pile.forEach((card, localIndex) => {
-            const edge = document.createElement('div'); 
+            const edge = document.createElement('div');
             edge.className = 'w-full h-[3px] bg-purple-300 hover:bg-yellow-400 hover:h-[5px] cursor-pointer transition-all mb-[1px]';
-            edge.addEventListener('click', () => handleCut(pileIndex, localIndex)); 
+            edge.addEventListener('click', () => handleCut(pileIndex, localIndex));
             pileDiv.appendChild(edge);
         });
         cutArea.appendChild(pileDiv);
     });
 }
 
-function handleCut(pileIndex, localIndex) {
-    // ✨ 核心計算：要切出 N 疊，代表你需要切 (N - 1) 次
-    let cutsNeeded = window.currentMaxCutPiles - 1;
-    if (cutsMade >= cutsNeeded) return; 
+// ✨ 初始化切牌介面
+async function initCutModal() {
+    window.currentMaxCutPiles = parseInt(await DB.get('cut_piles_count', 3)) || 3;
+    
+    document.getElementById('cut-modal').classList.remove('hidden');
+    document.getElementById('cut-modal').classList.add('flex');
+    
+    // ✨ 將最上方的呼吸燈文字改為「憑直覺切牌」
+    if (typeof BL !== 'undefined') BL.show('cut_1');
+    const blEl = document.getElementById('global-breathing-light');
+    if (blEl) blEl.innerText = '憑直覺切牌';
+    
+    cutPiles = [[...cards]];
+    cutsMade = 0;
+    
+    let cutProgressEl = document.getElementById('cut-progress-text');
+    if (!cutProgressEl) {
+        cutProgressEl = document.createElement('p');
+        cutProgressEl.id = 'cut-progress-text';
+        cutProgressEl.className = 'absolute bottom-20 text-yellow-300 font-bold text-xl tracking-widest drop-shadow-md bg-purple-900/80 px-6 py-2 rounded-full border border-yellow-500/50';
+        document.getElementById('cut-modal').appendChild(cutProgressEl);
+    }
+    
+    // ✨ 動態計算總需切牌次數 (x = 設定堆數-1)
+    const totalCuts = window.currentMaxCutPiles-1;
+    cutProgressEl.innerText = `切成${window.currentMaxCutPiles}堆，已切牌：${cutsMade}/${totalCuts}`;
+    
+    renderCutPiles();
+}
 
-    const pileToSplit = cutPiles[pileIndex]; 
-    const bottomHalf = pileToSplit.slice(0, localIndex + 1); 
+// ✨ 處理玩家點擊切牌的邏輯
+function handleCut(pileIndex, localIndex) {
+    if (cutPiles.length >= window.currentMaxCutPiles) return;
+
+    const pileToSplit = cutPiles[pileIndex];
+    const bottomHalf = pileToSplit.slice(0, localIndex + 1);
     const topHalf = pileToSplit.slice(localIndex + 1);
-    
-    if (topHalf.length === 0 || bottomHalf.length === 0) return; 
-    
+
+    if (topHalf.length === 0 || bottomHalf.length === 0) return;
+
     // 將切開的兩疊插回原本的陣列位置
-    cutPiles.splice(pileIndex, 1, bottomHalf, topHalf); 
+    cutPiles.splice(pileIndex, 1, bottomHalf, topHalf);
     cutsMade++;
+
+    // ✨ 立即更新畫面與進度
+    renderCutPiles();
+    
+    // ✨ 同步更新底部的數字進度條
+    const totalCuts = window.currentMaxCutPiles-1;
+    const cutProgressEl = document.getElementById('cut-progress-text');
+    if (cutProgressEl) cutProgressEl.innerText = `切成${window.currentMaxCutPiles}堆，已切牌：${cutsMade}/${totalCuts}`;
 
     const blEl = document.getElementById('global-breathing-light');
 
-    if (cutsMade < cutsNeeded) {
-        BL.show('cut_1'); 
-        // ✨ 動態回報進度
-        if (blEl) blEl.innerText = `還需切 ${cutsNeeded - cutsMade} 次`;
-    } else { 
-        BL.clearAction('cut_1'); 
-        // ✨ 完成時的提示
+    if (cutPiles.length < window.currentMaxCutPiles) {
+        // ✨ 切牌尚未完成，維持最上方的「憑直覺切牌」提示
+        if (typeof BL !== 'undefined') BL.show('cut_1');
+        if (blEl) blEl.innerText = '憑直覺切牌';
+    } else {
+        // ✨ 切牌完成！
+        if (typeof BL !== 'undefined') BL.clearAction('cut_1');
         if (blEl) {
             blEl.classList.remove('hidden');
             blEl.innerText = `切牌完成！`;
         }
-        setTimeout(mergePilesAndFanOut, 1000); 
+        setTimeout(mergePilesAndFanOut, 800);
     }
-    renderCutPiles();
 }
 
+// ✨ 華麗的切牌收攏動畫 (動態銷毀空容器，支援 n 堆完美置中均分)
+async function mergePilesAndFanOut() {
+    const cutArea = document.getElementById('cut-area');
+    const piles = Array.from(cutArea.children);
+    
+    const blEl = document.getElementById('global-breathing-light');
+    if (blEl) blEl.classList.add('hidden');
 
-function mergePilesAndFanOut() {
-    let newCardsOrder = cutPiles.length === 3 ? [...cutPiles[1], ...cutPiles[2], ...cutPiles[0]] : [...cards];
-    document.getElementById('cut-modal').classList.add('hidden'); 
-    document.getElementById('cut-modal').classList.remove('flex');
-    Composite.remove(world, cards); 
-    cards = newCardsOrder; 
-    Composite.add(world, cards); 
-    fanSpread();
+    if (piles.length <= 1) {
+        finishMerge();
+        return;
+    }
+
+    // 依序執行：從最左邊的牌堆(i)，飛到右邊相鄰的牌堆(i+1)
+    for (let i = 0; i < piles.length-1; i++) {
+        const currentPile = piles[i];
+        const nextPile = piles[i + 1];
+        
+        // 取得兩疊牌「當下」的絕對位置與尺寸 (即使剛重新置中過也能精準抓取！)
+        const currentRect = currentPile.getBoundingClientRect();
+        const nextRect = nextPile.getBoundingClientRect();
+        
+        // 精算移動距離
+        const dx = nextRect.left-currentRect.left;
+        const dy = -nextRect.height;
+        
+        // 1. 啟動飛行特效
+        currentPile.style.transition = 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+        currentPile.style.zIndex = 100 + i;
+        currentPile.style.transform = `translate(${dx}px, ${dy}px)`; 
+        
+        // 等待飛行抵達目的地
+        await new Promise(r => setTimeout(r, 300));
+        
+        // 2. 實體厚度轉移
+        const edges = Array.from(currentPile.children);
+        edges.forEach(edge => {
+            nextPile.appendChild(edge);
+        });
+        
+        // 3. ✨ 終極修復：徹底拔除已經空掉的左側牌堆！
+        // 只要它一消失，Flexbox 就會瞬間將剩餘的牌堆「完美均分置中」
+        currentPile.remove();
+        
+        // 稍微停頓 0.2 秒，讓玩家看清楚合併後，牌堆「瞬間重整排版」的儀式感
+        await new Promise(r => setTimeout(r, 200));
+    }
+
+    // 等待所有牌都疊完之後，欣賞 0.4 秒最終置中於螢幕最中央的完整厚度
+    setTimeout(finishMerge, 400);
+
+    function finishMerge() {
+        let newCardsOrder = [];
+        // 塔羅牌邏輯：最左邊的牌疊在最上面，所以實體陣列要反轉接合
+        [...cutPiles].reverse().forEach(p => newCardsOrder = [...newCardsOrder, ...p]);
+
+        document.getElementById('cut-modal').classList.add('hidden');
+        document.getElementById('cut-modal').classList.remove('flex');
+        
+        Matter.Composite.remove(world, cards);
+        cards = newCardsOrder;
+        Matter.Composite.add(world, cards);
+        
+        fanSpread();
+    }
 }
-
 
 // ✨ 電腦自動代切邏輯 (補上中斷點與憑證檢查)
 async function performAutoCutAndSpread(myRitualId = null) {
@@ -968,7 +1129,7 @@ async function performAutoCutAndSpread(myRitualId = null) {
 
     topHalf.forEach(c => {
         c.isAnimating = true;
-        c.targetPos = { x: c.position.x, y: c.position.y - 120 };
+        c.targetPos = { x: c.position.x, y: c.position.y-120 };
         c.zScore += 1000;
     });
 
@@ -996,39 +1157,49 @@ async function fanSpread() {
     const ritualUi = document.getElementById('ritual-ui');
     if (ritualUi) ritualUi.classList.add('hidden');
 
+    // ✨ 插入在這裡：單牌模式的雙重選項判斷
     if (currentRitualData.spread === 'single') {
-        return stackSpread();
+        // 根據剛剛在視窗選擇的模式，決定要疊起來直接抽，還是平面攤開讓玩家選
+        if (window.singleDrawStyle === 'direct') {
+            return stackSpread();
+        }
+        // 若為 'spread' (攤開抽)，則跳過這個 return，讓它繼續執行下方的攤開邏輯
     }
 
     const style = await DB.get('draw_style', 'full');
     if (style === 'full') { return fullSpread(); }
 
     currentState = 'FANNING';
-    const is78 = cards.length === 78;
+    
+    // ✨ 這裡將原本的 === 78 放寬為 > 30，避免跨牌「抽後不放回」導致排版崩潰
+    const is78 = cards.length > 30; 
     const cx = width / 2;
+    
     cards.forEach((card, index) => {
+        // ✨ 補上這行，確保引擎知道卡牌準備要移動了，才會有飛出去的動畫！
         card.isAnimating = true; 
         Matter.Body.setStatic(card, true);
+        
         let row = 0, indexInRow = index, countInRow = cards.length;
-        let radius = Math.min(width * 0.45, 180), cy = height - 130;
+        let radius = Math.min(width * 0.45, 180), cy = height-130;
 
         if (is78) {
             row = index % 5;
             indexInRow = Math.floor(index / 5);
             countInRow = 16;
 
-            if (row === 0) { radius = Math.min(width * 0.48, 420); cy = height - 150; }
-            else if (row === 1) { radius = Math.min(width * 0.40, 340); cy = height - 120; }
-            else if (row === 2) { radius = Math.min(width * 0.32, 260); cy = height - 90; }
-            else if (row === 3) { radius = Math.min(width * 0.24, 180); cy = height - 60; }
-            else { radius = Math.min(width * 0.16, 100); cy = height - 30; } 
+            if (row === 0) { radius = Math.min(width * 0.48, 420); cy = height-150; }
+            else if (row === 1) { radius = Math.min(width * 0.40, 340); cy = height-120; }
+            else if (row === 2) { radius = Math.min(width * 0.32, 260); cy = height-90; }
+            else if (row === 3) { radius = Math.min(width * 0.24, 180); cy = height-60; }
+            else { radius = Math.min(width * 0.16, 100); cy = height-30; }
         }
 
-        const progress = countInRow > 1 ? indexInRow / (countInRow - 1) : 0;
+        const progress = countInRow > 1 ? indexInRow / (countInRow-1) : 0;
         const angleDeg = -60 + (progress * 120);
         const angleRad = angleDeg * (Math.PI / 180);
 
-        card.targetPos = { x: cx + Math.sin(angleRad) * radius, y: cy - Math.cos(angleRad) * radius };
+        card.targetPos = { x: cx + Math.sin(angleRad) * radius, y: cy-Math.cos(angleRad) * radius };
         card.targetAngle = angleRad;
         card.originalPos = { ...card.targetPos };
         card.originalAngle = card.targetAngle;
@@ -1039,7 +1210,7 @@ async function fanSpread() {
 // ✨ 單牌模式專屬：3D 立體真實牌堆
 // ==========================================
 function stackSpread() {
-    currentState = 'FANNING'; 
+    currentState = 'FANNING';
     const is78 = cards.length === 78;
     width = window.innerWidth;
     height = window.innerHeight;
@@ -1055,11 +1226,11 @@ function stackSpread() {
     const cx = width / 2;
     const cy = height * 0.55;
     const targetWidth = 140;
-    const baseW = 60 * (is78 ? 0.55 : 0.75); 
-    const scale = targetWidth / baseW; 
+    const baseW = 60 * (is78 ? 0.55 : 0.75);
+    const scale = targetWidth / baseW;
 
-    const totalThicknessY = 12; 
-    const totalThicknessX = 3;  
+    const totalThicknessY = 12;
+    const totalThicknessX = 3;
 
     cards.forEach((card, i) => {
         if (card.collisionFilter) card.collisionFilter.group = -1;
@@ -1067,16 +1238,16 @@ function stackSpread() {
         Matter.Body.setVelocity(card, { x: 0, y: 0 });
         card.isAnimating = true;
 
-        const progress = i / (cards.length - 1 || 1);
+        const progress = i / (cards.length-1 || 1);
         const offsetX = progress * totalThicknessX;
         const offsetY = progress * totalThicknessY;
 
         card.targetPos = {
-            x: cx - (totalThicknessX / 2) + offsetX,
-            y: cy + (totalThicknessY / 2) - offsetY
+            x: cx-(totalThicknessX / 2) + offsetX,
+            y: cy + (totalThicknessY / 2)-offsetY
         };
 
-        const randomJitter = (Math.random() - 0.5) * 0.08 * (1 - progress * 0.8);
+        const randomJitter = (Math.random()-0.5) * 0.08 * (1-progress * 0.8);
         card.targetAngle = randomJitter;
         card.originalPos = { ...card.targetPos };
         card.originalAngle = card.targetAngle;
@@ -1099,10 +1270,10 @@ function fullSpread() {
     }
 
     const usableTop = is78 ? height * 0.05 : height * 0.20;
-    const usableBottom = height - 65;
+    const usableBottom = height-65;
     const usableWidth = width * 0.99;
-    const drawAreaHeight = usableBottom - usableTop;
-    const leftOffset = (width - usableWidth) / 2;
+    const drawAreaHeight = usableBottom-usableTop;
+    const leftOffset = (width-usableWidth) / 2;
 
     let boundaryEl = document.getElementById('selection-boundary');
     if (!boundaryEl) {
@@ -1137,7 +1308,7 @@ function fullSpread() {
 
     if (!is78) {
         const rowsCount = 4;
-        const maxCols = 6; 
+        const maxCols = 6;
         const cellH = drawAreaHeight / rowsCount;
         const minCellW = usableWidth / maxCols;
         const scaleRaw22 = Math.min((minCellW * 0.95) / 60, (cellH * 0.95) / 105);
@@ -1145,10 +1316,10 @@ function fullSpread() {
 
         cards.forEach((card, i) => {
             let rowIdx, colIdx, cardsInThisRow;
-            if (i < 5) { rowIdx = 0; colIdx = i; cardsInThisRow = 5; } 
-            else if (i < 11) { rowIdx = 1; colIdx = i - 5; cardsInThisRow = 6; } 
-            else if (i < 17) { rowIdx = 2; colIdx = i - 11; cardsInThisRow = 6; } 
-            else { rowIdx = 3; colIdx = i - 17; cardsInThisRow = 5; }
+            if (i < 5) { rowIdx = 0; colIdx = i; cardsInThisRow = 5; }
+            else if (i < 11) { rowIdx = 1; colIdx = i-5; cardsInThisRow = 6; }
+            else if (i < 17) { rowIdx = 2; colIdx = i-11; cardsInThisRow = 6; }
+            else { rowIdx = 3; colIdx = i-17; cardsInThisRow = 5; }
 
             const rowCellW = usableWidth / cardsInThisRow;
             const posX = leftOffset + (colIdx * rowCellW) + (rowCellW / 2);
@@ -1173,7 +1344,7 @@ function fullSpread() {
 
             const col = gridIndex % cols;
             const row = Math.floor(gridIndex / cols);
-            const posX = (width - usableWidth) / 2 + col * cellW + cellW / 2;
+            const posX = (width-usableWidth) / 2 + col * cellW + cellW / 2;
             const posY = usableTop + row * cellH + cellH / 2;
 
             card.targetPos = { x: posX, y: posY };
@@ -1194,7 +1365,7 @@ function updateCardScale(card, targetScale) {
         card.render.sprite.yScale = card.baseScaleY;
     }
     if (!card.currentPhysScale) {
-        card.currentPhysScale = card.baseScale || 1; 
+        card.currentPhysScale = card.baseScale || 1;
     }
     const relativeScale = targetScale / card.currentPhysScale;
     Matter.Body.scale(card, relativeScale, relativeScale);
@@ -1214,8 +1385,8 @@ async function finalizeSpread() {
     const spreadLayer = document.getElementById('spread-layer');
     if (spreadLayer) {
         spreadLayer.innerHTML = '';
-        spreadLayer.className = ''; 
-        spreadLayer.style.display = 'none'; 
+        spreadLayer.className = '';
+        spreadLayer.style.display = 'none';
         spreadLayer.style.opacity = '0';
     }
 
@@ -1226,6 +1397,85 @@ async function finalizeSpread() {
         globalBL.classList.add('left-1/2', '-translate-x-1/2', 'top-24');
     }
 
+    // ✨ 🛑 跨牌系統攔截器 🛑 ✨
+    if (typeof window.crossDrawState !== 'undefined' && window.crossDrawState.active) {
+        const parentRecord = window.crossDrawState.parentRecord;
+        if (!parentRecord.crossDraws) parentRecord.crossDraws = [];
+
+        if (window.crossDrawState.type === 'single') {
+            // ✨ 利用我們剛才記下的陣列，依序將抽出來的卡牌派發給指定位置！
+            window.crossDrawState.slotIndices.forEach((targetSlotIdx, idx) => {
+                const drawnCard = currentRitualData.cards[idx]; // 依序取出剛剛抽到的牌
+                if (drawnCard) {
+                    drawnCard.slotIndex = targetSlotIdx; // 覆寫為目標牌位
+                    parentRecord.crossDraws.push({
+                        type: 'single',
+                        slotIndex: targetSlotIdx,
+                        deckId: window.crossDrawState.deckId,
+                        deckName: window.crossDrawState.deckName,
+                        card: drawnCard
+                    });
+                }
+            });
+        } else {
+            // 全陣跨牌
+            const newLayerCards = currentRitualData.cards.map(c => ({
+                ...c,
+                slotIndex: c.slotIndex
+            }));
+            const layerId = parentRecord.crossDraws.filter(d => d.type === 'full').length;
+            parentRecord.crossDraws.push({
+                type: 'full',
+                layerId: layerId,
+                deckId: window.crossDrawState.deckId,
+                deckName: window.crossDrawState.deckName,
+                cards: newLayerCards
+            });
+        }
+
+        // 還原為原本的主題設定
+        if (window.crossDrawState.originalTheme) {
+            await DB.set('deck_theme', window.crossDrawState.originalTheme);
+        }
+
+        // 寫回資料庫
+        let history = await DB.get('history', []);
+        const idx = history.findIndex(r => r.id === parentRecord.id);
+        if (idx !== -1) {
+            history[idx] = parentRecord;
+            await DB.set('history', history);
+        }
+
+        // 將狀態權杖交還給原牌陣
+        currentDetailRecord = parentRecord;
+        // 如果本來就是一場還沒儲存的新儀式，也要更新回去
+        if (parentRecord.id && !parentRecord.id.toString().startsWith('cross_') && parentRecord.notes !== undefined) {
+            currentRitualData = parentRecord;
+        }
+
+        window.crossDrawState.active = false;
+
+        setTimeout(() => {
+            // 先渲染原本的主牌陣
+            renderReadingRoom(parentRecord, false);
+            
+            // ✨ 修正 1：利用延遲自動觸發圖層切換與翻牌動畫
+            if (window.crossDrawState.type === 'single') {
+                window.crossDrawState.slotIndices.forEach((targetSlotIdx) => {
+                    const supplements = parentRecord.crossDraws.filter(d => d.type === 'single' && d.slotIndex === targetSlotIdx);
+                    setTimeout(() => toggleSingleSlot(null, targetSlotIdx, supplements.length), 250);
+                });
+            } else {
+                const layerId = parentRecord.crossDraws.filter(d => d.type === 'full').length - 1;
+                setTimeout(() => toggleFullSpreadLayer(layerId), 250);
+            }
+
+            if (typeof showToast === 'function') showToast('✨ 神諭已降臨！跨牌成功。');
+        }, 500);
+
+        await DeckStorage.save(currentRealDeck, currentSelectedDeckSize);
+        return; // 攔截成功，終止後續的正常流程
+    }
     if (currentRitualData.spread === 'single') {
         renderReadingRoom(currentRitualData, true);
     } else {
@@ -1261,7 +1511,7 @@ Matter.Events.on(render, 'afterRender', function () {
         }
         ctx.closePath();
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; 
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.fill();
 
         // ✨ 強化版黃色呼吸框：結合粗細與光暈的雙重呼吸效果
@@ -1325,26 +1575,35 @@ const AutoBot = {
         if (!isRitualActive || (currentRitualData && currentRitualData.id !== myRitualId)) return;
 
         currentState = 'GATHERING';
-        if (typeof BL !== 'undefined' && currentState !== 'SELECTING') {
+        if (typeof BL !== 'undefined' && (typeof currentState === 'undefined' || currentState !== 'SELECTING')) {
             BL.clear();
         }
+
+        // ✨ 1. 取得當前使用的牌組主題
+        const currentTheme = await DB.get('deck_theme', 'cards');
 
         cards.forEach(card => {
             let normalizedAngle = card.angle % (2 * Math.PI);
             if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
-            card.tarotData.isReversed = (normalizedAngle > Math.PI / 2) && (normalizedAngle < 3 * Math.PI / 2);
+
+            // ✨ 2. 智慧判斷：如果是托特牌 (thoth)，強制為正位 (false)
+            if (currentTheme === 'thoth') {
+                card.tarotData.isReversed = false;
+            } else {
+                card.tarotData.isReversed = (normalizedAngle > Math.PI / 2) && (normalizedAngle < 3 * Math.PI / 2);
+            }
+
             card.isAnimating = true;
             Matter.Body.setStatic(card, true);
-            // ✨ 核心修復 2-2：機器人自動收牌時，也要關閉碰撞
-            if (card.collisionFilter) card.collisionFilter.group = 0;
+            if (card.collisionFilter) card.collisionFilter.group = -1;
             card.targetAngle = 0;
             card.zVelocity = 0;
             card.pressure = 0;
         });
 
-        cards.sort((a, b) => a.zDepth - b.zDepth);
+        cards.sort((a, b) => a.zDepth-b.zDepth);
         cards.forEach((card, i) => {
-            card.targetPos = { x: width / 2 - (i * 0.2), y: shuffleZone.centerY - (i * 0.2) };
+            card.targetPos = { x: width / 2-(i * 0.2), y: shuffleZone.centerY-(i * 0.2) };
         });
 
         await this.wait(1200);
@@ -1364,17 +1623,25 @@ const AutoBot = {
     simulateWash(myRitualId) {
         return new Promise(async resolve => {
             for (let i = 0; i < 3; i++) {
-                // 🎯 核心修復：檢查的變數名稱必須是 myRitualId，而不是 myToken
+                // 🎯 核心防線：檢查儀式是否中斷
                 if (!isRitualActive || (currentRitualData && currentRitualData.id !== myRitualId)) {
                     return resolve();
                 }
 
                 cards.forEach(card => {
+                    // ✨ 關鍵 1：因為我們開啟了睡眠模式，在施加推力前必須手動喚醒卡牌
+                    Matter.Sleeping.set(card, false);
+
+                    // 給予平面推力與旋轉
                     Matter.Body.applyForce(card, card.position, {
-                        x: (Math.random() - 0.5) * 0.06,
-                        y: (Math.random() - 0.5) * 0.06
+                        x: (Math.random()-0.5) * 0.06,
+                        y: (Math.random()-0.5) * 0.06
                     });
-                    Matter.Body.setAngularVelocity(card, (Math.random() - 0.5) * 0.3);
+                    Matter.Body.setAngularVelocity(card, (Math.random()-0.5) * 0.3);
+
+                    // ✨ 關鍵 2：恢復 Z 軸交錯！
+                    // 每次推牌時給予隨機深度變化，由系統背景的降頻排序器 (ZSORT_INTERVAL) 統一處理渲染層級
+                    card.zScore += (Math.random()-0.5) * 50;
                 });
 
                 await this.wait(800);

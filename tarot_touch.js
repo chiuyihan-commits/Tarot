@@ -6,8 +6,8 @@ let fdLastY = null;
 
 function applyDragForce(x, y, dx, dy) {
     // 🛡️ 核心防線 1：如果你的觸控事件沒有傳遞 dx, dy，系統自己幫你精算！
-    let actualDx = dx !== undefined ? dx : (fdLastX !== null ? x - fdLastX : 0);
-    let actualDy = dy !== undefined ? dy : (fdLastY !== null ? y - fdLastY : 0);
+    let actualDx = dx !== undefined ? dx : (fdLastX !== null ? x-fdLastX : 0);
+    let actualDy = dy !== undefined ? dy : (fdLastY !== null ? y-fdLastY : 0);
 
     fdLastX = x;
     fdLastY = y;
@@ -101,14 +101,20 @@ function confirmDrawCard() {
     selectedCard = null;
     hideSelectionBoundary(); // ✨ 核心修復：選定卡牌後，立刻強制隱藏 HTML 選取殘框
 
-    if (currentRitualData.spread === 'single') {
+    // ✨ 處理「單牌且直接抽」的快速結算捷徑 (若為攤開盲抽，則會繼續往下跑正常雷達邏輯)
+    if (currentRitualData.spread === 'single' && window.singleDrawStyle === 'direct') {
         const drawUi = document.getElementById('draw-ui');
         if (drawUi) drawUi.classList.add('hidden');
         
         if (typeof BL !== 'undefined') BL.show('draw_place', '神諭已定，正在開啟解牌室...');
         setTimeout(() => {
             if (typeof finalizeSpread === 'function') finalizeSpread();
-        }, 400); // 這裡保留 400ms 是為了讓卡牌浮起特效播完
+        }, 400); 
+
+        setTimeout(() => {
+            isProcessingDraw = false;
+        }, 300);
+        
         return; 
     }
 
@@ -174,7 +180,7 @@ function undoDrawCard() {
 
     card.targetPos = {
         x: lastAction.originalTargetPos.x + 10,
-        y: lastAction.originalTargetPos.y - 15
+        y: lastAction.originalTargetPos.y-15
     };
     card.targetAngle = 0.15;
     card.zScore = 2000;
@@ -268,20 +274,7 @@ container.addEventListener('pointerdown', (e) => {
 
         const bodies = Query.point(cards, { x: e.clientX, y: e.clientY }).filter(c => !c.isDrawn);
         if (bodies.length > 0) {
-            const topCard = bodies[bodies.length - 1];
-
-            // ✨ 2. 點擊瞬間強制喚醒卡牌！解決點擊沒反應的休眠 Bug
-            Matter.Sleeping.set(topCard, false);
-
-            // ✨ 1. 優先處理「單牌神諭」模式的捷徑 (包含雙重變數安全防護)
-            const isSingleMode = (typeof currentSelectedSpread !== 'undefined' && currentSelectedSpread === 'single') ||
-                (typeof currentRitualData !== 'undefined' && currentRitualData.spread === 'single');
-
-            if (isSingleMode) {
-                selectedCard = topCard; // 先設定選中牌
-                confirmDrawCard();      // 直接觸發確認，送進解牌室
-                return;                 // 結束事件處理，不往下跑
-            }
+            const topCard = bodies[bodies.length-1];
 
             // ✨ 2. 如果不是單牌，且還有扣打可以抽，才執行一般的「升起 / 降下」特效
             if (drawnCount < spreadSlots.length) {
@@ -308,7 +301,7 @@ container.addEventListener('pointerdown', (e) => {
 
                     topCard.targetPos = {
                         x: (topCard.originalPos.x || topCard.position.x) + 15,
-                        y: (topCard.originalPos.y || topCard.position.y) - 10
+                        y: (topCard.originalPos.y || topCard.position.y)-10
                     };
 
                     topCard.targetAngle = 0.15;
@@ -360,8 +353,8 @@ container.addEventListener('pointermove', (e) => {
 
     // --- 狀態 A：洗牌中 (維持原有邏輯) ---
     if (currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD') {
-        let deltaX = e.clientX - activePointers[e.pointerId].x;
-        let deltaY = e.clientY - activePointers[e.pointerId].y;
+        let deltaX = e.clientX-activePointers[e.pointerId].x;
+        let deltaY = e.clientY-activePointers[e.pointerId].y;
         applyDragForce(e.clientX, e.clientY, deltaX, deltaY);
         activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
 
@@ -373,7 +366,7 @@ container.addEventListener('pointermove', (e) => {
         if (isPressingToDraw && selectedCard) {
             const selectMode = SystemCache.selectMode;
             if (selectMode === 'swipe') {
-                let diffY = touchStartY - e.clientY;
+                let diffY = touchStartY-e.clientY;
                 if (diffY > 60) {
                     confirmDrawCard();
                     isPressingToDraw = false;
@@ -385,8 +378,7 @@ container.addEventListener('pointermove', (e) => {
         const bodies = Query.point(cards, { x: e.clientX, y: e.clientY }).filter(c => !c.isDrawn);
 
         if (bodies.length > 0) {
-            const topCard = bodies[bodies.length - 1];
-            Matter.Sleeping.set(topCard, false);
+            const topCard = bodies[bodies.length-1];
 
             if (selectedCard !== topCard) {
                 // a. 舊牌降回原位
@@ -417,7 +409,7 @@ container.addEventListener('pointermove', (e) => {
                 // ✨ 修正 5：確保 originalPos 已經存在後才讀取 x, y，絕對防禦 Cannot read properties of undefined
                 topCard.targetPos = {
                     x: (topCard.originalPos.x || topCard.position.x) + 5,
-                    y: (topCard.originalPos.y || topCard.position.y) - 10
+                    y: (topCard.originalPos.y || topCard.position.y)-10
                 };
 
                 topCard.targetAngle = 0.12;
@@ -436,14 +428,7 @@ container.addEventListener('pointermove', (e) => {
 container.addEventListener('pointerup', (e) => {
     if (currentState !== 'SELECTING' || drawnCount >= spreadSlots.length) return;
 
-    // ✨ 新增：單牌模式下，只要點擊或滑動放開，直接開牌！
-    if (currentRitualData.spread === 'single' && selectedCard) {
-        confirmDrawCard();
-        isPressingToDraw = false;
-        return;
-    }
-
-    let diffY = e.clientY - touchStartY;
+    let diffY = e.clientY-touchStartY;
 
     // 拔除 localStorage，直接讀取 Cache
     const selectMode = SystemCache.selectMode;
@@ -468,16 +453,23 @@ container.addEventListener('touchstart', (e) => {
     if (e.targetTouches.length === 2 && currentState === 'SHUFFLING'|| currentState === 'SHUFFLING_INWARD') {
         const t1 = e.targetTouches[0];
         const t2 = e.targetTouches[1];
-        const pDx = t1.clientX - t2.clientX;
-        const pDy = t1.clientY - t2.clientY;
+        const pDx = t1.clientX-t2.clientX;
+        const pDy = t1.clientY-t2.clientY;
         initialPinchDistance = Math.sqrt(pDx * pDx + pDy * pDy); // 記錄初始雙指距離
     }
 }, { passive: true });
 
 container.addEventListener('touchmove', (e) => {
-    if (e.targetTouches.length === 2 && (currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD')&& initialPinchDistance > 0) {
+    // ✨ 新增防呆：確定這是一個真實的觸控事件，且 e.targetTouches 存在，才繼續執行
+    if (!e.targetTouches || e.targetTouches.length < 2) return;
+
+    if (e.targetTouches.length === 2 && (currentState === 'SHUFFLING' || currentState === 'SHUFFLING_INWARD') && initialPinchDistance > 0) {
         const t1 = e.targetTouches[0];
         const t2 = e.targetTouches[1];
+        
+        // 確保兩個觸控點都有效
+        if (!t1 || !t2) return;
+
         const pDx = t1.clientX - t2.clientX;
         const pDy = t1.clientY - t2.clientY;
         const currentPinchDistance = Math.sqrt(pDx * pDx + pDy * pDy);

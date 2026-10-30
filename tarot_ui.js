@@ -2,10 +2,71 @@
 let isRitualActive = false; // ✨ 新增：記錄儀式是否正在進行中
 let isCardRevealing = false; // 專門用來鎖定「開牌動畫」的無敵狀態
 
-// 全域函數：開啟歷史紀錄
+// 全域函數：開啟歷史紀錄 (防狀態殘留版)
 window.openHistoryScreen = async function () {
-    await renderHistoryList(); // 先等紀錄從 DB 撈出來並渲染好
-    navTo('screen-history');   // 再切換畫面，做到無縫接軌
+    // 1. 強制清除狀態殘留
+    window.isInTrashView = false;
+    try { if (typeof isInTrashView !== 'undefined') isInTrashView = false; } catch (e) { }
+
+    // 2. 重置 UI 介面
+    const btnTrash = document.getElementById('btn-trash-toggle');
+    const title = document.getElementById('history-title');
+    const screen = document.getElementById('screen-history');
+    if (btnTrash) { btnTrash.innerText = '🗑️'; btnTrash.classList.remove('text-yellow-300'); btnTrash.classList.add('text-gray-400'); }
+    if (title) title.innerText = '阿卡西紀錄';
+    if (screen) screen.classList.remove('bg-stone-950/95');
+
+    // ✨ 新增：確保每次進入時，搜尋過濾框都是完美收闔狀態
+    const filterBar = document.getElementById('history-filter-bar');
+    const filterBtn = document.getElementById('btn-filter-toggle');
+    if (filterBar) {
+        filterBar.classList.add('hidden');
+        filterBar.style.opacity = '0';
+    }
+    if (filterBtn) filterBtn.classList.remove('opacity-50', 'scale-90');
+
+    // 3. 強制重撈最新資料庫並觸發過濾
+    if (typeof DB !== 'undefined') {
+        window.allHistoryRecords = await DB.get('history', []);
+    }
+    if (typeof renderHistoryList === 'function') {
+        await renderHistoryList();
+    } else if (typeof applyHistoryFilters === 'function') {
+        window.applyHistoryFilters();
+    }
+
+    navTo('screen-history');
+};
+
+// ✨ 全域：牌組專屬名稱轉換器 (動態將偉特名詞轉換為托特名詞)
+window.translateCardName = function(name, deckKey) {
+    if (deckKey !== 'thoth') return name;
+    let newName = name;
+
+    // 1. 宮廷牌階級轉換
+    if (newName.includes('侍者')) newName = newName.replace('侍者', '騎士');
+    else if (newName.includes('騎士')) newName = newName.replace('騎士', '皇后');
+    else if (newName.includes('皇后')) newName = newName.replace('皇后', '王子');
+    else if (newName.includes('國王')) newName = newName.replace('國王', '公主');
+    
+    // 2. 大阿爾克那轉換
+    const majorMap = {
+        '魔術師': '賢者',
+        '力量': '慾望',
+        '正義': '調節',
+        '節制': '藝術',
+        '命運之輪': '命運',
+        '審判': '新紀元',
+        '世界': '宇宙'
+    };
+    
+    for (let rws in majorMap) {
+        if (newName.includes(rws)) {
+            newName = newName.replace(rws, majorMap[rws]);
+            break;
+        }
+    }
+    return newName;
 };
 
 // ============================================================================
@@ -34,11 +95,17 @@ const TAROT_SPREADS_CONFIG = [
     { id: 'single', name: '單牌 (1張)', icon: '🃏', desc: '解析直覺' },
     { id: 'triangle', name: '聖三角牌陣 (3張)', icon: '♻️', desc: '三張時序' },
     { id: 'five', name: '五連張牌陣 (5張)', icon: '⭐', desc: '五張時序' },
-    { id: 'hexagram', name: '六芒星牌陣 (7張)', icon: '✡️', desc: '全面的事件解析' }
+    { id: 'two_paths', name: '二選一牌陣 (5張)', icon: '⚖️', desc: '面臨抉擇的發展預測' }, 
+    { id: 'hexagram', name: '六芒星牌陣 (7張)', icon: '✡️', desc: '全面的事件解析' },
+    { id: 'horseshoe', name: '馬蹄牌陣 (7張)', icon: '🧲', desc: '深入探討問題來龍去脈' },
+    { id: 'tree_of_life', name: '生命之樹 (10張)', icon: '🌳', desc: '卡巴拉靈性與物質顯化' },
+    { id: 'celtic', name: '塞爾特十字 (10張)', icon: '✝️', desc: '深入剖析單一事件' },   
+    { id: 'zodiac', name: '黃道十二宮 (12張)', icon: '🌌', desc: '年度總覽與全方位運勢' },
+    { id: 'romany', name: '羅曼尼大牌陣 (21張)', icon: '👁️', desc: '吉普賽全景時序透視' }, // ✨ 新增
+    { id: 'tableau', name: '大藍圖牌陣 (36張)', icon: '🗺️', desc: '終極全視角巨型陣法' }   // ✨ 新增
 ];
 
-function applyDefaultSettings() {
-    // --- 1. 同步牌數按鈕顯示 ---
+async function applyDefaultSettings() {
     const deckIcon = document.getElementById('setup-deck-icon');
     const deckLabel = document.getElementById('setup-deck-label');
 
@@ -52,23 +119,32 @@ function applyDefaultSettings() {
         }
     }
 
-    // --- 2. 同步牌陣按鈕顯示 (✨ 使用全域資料庫) ---
     const spreadIcon = document.getElementById('setup-spread-icon');
     const spreadLabel = document.getElementById('setup-spread-label');
 
     if (spreadIcon && spreadLabel) {
-        // 利用 find() 去全域陣列中尋找目前選取的牌陣
         const currentSpreadData = TAROT_SPREADS_CONFIG.find(spread => spread.id === currentSelectedSpread);
 
         if (currentSpreadData) {
             spreadIcon.textContent = currentSpreadData.icon;
             spreadLabel.textContent = currentSpreadData.name;
+        } else if (currentSelectedSpread && currentSelectedSpread.startsWith('custom_dynamic_')) {
+            const count = parseInt(currentSelectedSpread.replace('custom_dynamic_', ''));
+            spreadIcon.textContent = '🔢';
+            spreadLabel.textContent = `自訂抽牌 (${count}張)`;
+        } else if (currentSelectedSpread && currentSelectedSpread.startsWith('custom_saved_')) {
+            const customSpreads = await DB.get('custom_spreads', []);
+            const idx = parseInt(currentSelectedSpread.replace('custom_saved_', ''));
+            if (customSpreads[idx]) {
+                spreadIcon.textContent = customSpreads[idx].icon || '✨';
+                spreadLabel.textContent = customSpreads[idx].name;
+            }
         }
     }
 }
 
 // ==========================================
-// 模組 2: 呼吸燈系統 (BL Engine - Async 升級版)
+// 模組 2: 呼吸燈系統 (BL Engine-Async 升級版)
 // ==========================================
 const BL = {
     el: null, timer: null, currentId: null,
@@ -182,6 +258,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initSettingsUI();
     if (typeof applyThemeColor === 'function') applyThemeColor();
     if (typeof initDeckThemeSelect === 'function') initDeckThemeSelect();
+    if (typeof initSetupMainDeckSelect === 'function') initSetupMainDeckSelect();
     if (typeof applyLockedPreferences === 'function') applyLockedPreferences();
     preloadDeckImages();
 
@@ -257,6 +334,7 @@ window.closeSetupModal = function () {
     history.back();
 };
 
+// 替換這整段 selectDeckAndNext 函數
 async function selectDeckAndNext(size, iconText, labelText) {
     if (typeof currentRitualData !== 'undefined') {
         currentRitualData.deckSize = size;
@@ -272,11 +350,10 @@ async function selectDeckAndNext(size, iconText, labelText) {
     if (labelEl) labelEl.innerText = labelText;
     if (iconEl) iconEl.innerText = iconText;
 
-    // 關閉 Modal
+    // ✨ 核心修復：使用 history.back() 消耗掉歷史紀錄，讓 popstate 統一處理關閉，避免堆疊錯亂
     const modal = document.getElementById('modal-deck');
-    if (modal) {
-        modal.classList.remove('flex');
-        modal.classList.add('hidden');
+    if (modal && !modal.classList.contains('hidden')) {
+        history.back();
     }
 }
 
@@ -290,79 +367,80 @@ function handleSetupNext() {
     }
 }
 
-// ✨ 單牌專屬流程控制器
+// ✨ 單牌專屬流程控制器 (加入子選單與抽牌風格)
 async function openSingleCardModal() {
-    const savedState = await DeckStorage.load();
-    // ✨ 核心修復：必須「有舊紀錄」且「舊紀錄的張數與你當下在首頁選的張數一模一樣」才解鎖！
-    const canUseOld = savedState !== null && savedState.size === currentSelectedDeckSize;
-
-    // 我們借用自訂的 Confirm Modal，並改寫它的內容
     const modal = document.getElementById('custom-confirm-modal');
     const msgEl = document.getElementById('confirm-msg');
 
-    // 注入三個按鈕
-    msgEl.innerHTML = `
-        <p class="mb-4 text-yellow-300 font-bold text-lg">🃏 單牌速占模式</p>
-        <div class="flex flex-col gap-3">
-            <button id="btn-single-old" class="magic-btn py-3 text-sm ${canUseOld ? '' : 'btn-nintendo-disabled'}" ${canUseOld ? '' : 'disabled'}>
-                🔮 使用舊牌 ${canUseOld ? `(${savedState.size}張)` : '(無紀錄)'}
-            </button>
-            <button id="btn-single-auto" class="magic-btn py-3 text-sm border-blue-400 text-blue-200">
-                🌀 自動洗牌
-            </button>
-            <button id="btn-single-manual" class="magic-btn py-3 text-sm border-green-400 text-green-200">
-                🫳 手動洗牌
-            </button>
-        </div>
-    `;
+    // 第一層：選擇洗牌方式
+    const showInitial = () => {
+        msgEl.innerHTML = `
+            <p class="mb-4 text-yellow-300 font-bold text-lg">🃏 單牌速占模式</p>
+            <div class="flex flex-col gap-3">
+                <!-- 已依需求移除使用舊牌的選項 -->
+                <button id="btn-single-auto" class="magic-btn py-3 text-sm border-blue-400 text-blue-200">
+                    🌀 自動洗牌
+                </button>
+                <button id="btn-single-manual" class="magic-btn py-3 text-sm border-green-400 text-green-200">
+                    🫳 手動洗牌
+                </button>
+            </div>
+        `;
 
-    document.getElementById('btn-confirm-ok').classList.add('hidden');
-    document.getElementById('btn-confirm-cancel').innerText = '取消返回';
-    document.getElementById('btn-confirm-cancel').onclick = () => { modal.classList.add('hidden'); };
+        document.getElementById('btn-confirm-ok').classList.add('hidden');
+        document.getElementById('btn-confirm-cancel').innerText = '取消返回';
+        document.getElementById('btn-confirm-cancel').onclick = () => { modal.classList.add('hidden'); };
 
-    document.getElementById('btn-single-old').onclick = async () => {
-        modal.classList.add('hidden');
-        currentSelectedDeckSize = savedState.size; // 繼承舊牌大小
-
-        // 依照儲存的 ID 與正逆位重新組裝實體牌堆
-        const baseDeck = await generateBaseDeck(savedState.size);
-        currentRealDeck = savedState.deck.map(savedCard => {
-            let card = baseDeck.find(c => c.id === savedCard.id);
-            card.isReversed = savedCard.isReversed;
-            return card;
-        });
-
-        // ✨ 直接跳轉展牌 (無縫出現)
-        await startSingleRitualDirectly();
-
-        // ⚡ 核心進化：給予 800 毫秒的卡牌浮現動畫緩衝，隨即自動出牌直達解牌室！
-        setTimeout(() => {
-            // 確保物理世界有牌，且目前還沒有開始抽牌
-            if (typeof cards !== 'undefined' && cards.length > 0) {
-                // 🎯 自動鎖定實體牌堆中最上面的那張牌
-                selectedCard = cards[cards.length - 1];
-
-                // 🎯 直接觸發確認選牌，無縫傳送進解牌室
-                if (typeof confirmDrawCard === 'function') {
-                    confirmDrawCard();
-                }
-            }
-        }, 800); // 800ms 的延遲能讓玩家視覺上看到牌堆成型後「瞬間抽離」的華麗動效
+        document.getElementById('btn-single-auto').onclick = () => showStyleSelection('auto');
+        document.getElementById('btn-single-manual').onclick = () => showStyleSelection('manual');
     };
 
-    document.getElementById('btn-single-auto').onclick = async () => {
-        modal.classList.add('hidden');
-        currentRitualData = { id: Date.now().toString(), date: new Date().toLocaleString('zh-TW'), question: document.getElementById('input-question').value || '單牌速占', spread: 'single', cards: [], notes: '' };
-        currentRealDeck = shuffleArray(await generateBaseDeck(currentSelectedDeckSize));
-        AutoBot.execute(); // ✨ 啟動自動化機器人
+    // 第二層：選擇開牌風格
+    const showStyleSelection = (shuffleType) => {
+        msgEl.innerHTML = `
+            <p class="mb-4 text-yellow-300 font-bold text-lg">👁️ 選擇抽牌方式</p>
+            <div class="flex flex-col gap-3">
+                <button id="btn-style-direct" class="magic-btn py-3 text-sm border-purple-400 text-purple-200">
+                    🎯 直接開最頂端的一張牌
+                </button>
+                <button id="btn-style-spread" class="magic-btn py-3 text-sm border-yellow-400 text-yellow-200">
+                    🖐️ 78 張全攤開隨機盲抽
+                </button>
+            </div>
+        `;
+
+        document.getElementById('btn-confirm-cancel').innerText = '🔙 上一步';
+        document.getElementById('btn-confirm-cancel').onclick = showInitial;
+
+        document.getElementById('btn-style-direct').onclick = () => {
+            window.singleDrawStyle = 'direct'; // 設定全域旗標為「直接抽」
+            executeSingleDraw(shuffleType);
+        };
+
+        document.getElementById('btn-style-spread').onclick = () => {
+            window.singleDrawStyle = 'spread'; // 設定全域旗標為「攤開抽」
+            executeSingleDraw(shuffleType);
+        };
     };
 
-    document.getElementById('btn-single-manual').onclick = () => {
+    const executeSingleDraw = async (shuffleType) => {
         modal.classList.add('hidden');
-        startRitual(); // ✨ 進入正常手動流程
+        if (shuffleType === 'auto') {
+            const currentTheme = await DB.get('deck_theme', 'cards');
+            const themeList = await DB.get('deck_theme_list', [{ name: '經典萊德偉特', id: 'cards' }, { name: '托特塔羅牌', id: 'thoth' }]);
+            const themeObj = themeList.find(t => t.id === currentTheme) || themeList[0];
+
+            currentRitualData = { id: Date.now().toString(), date: new Date().toLocaleString('zh-TW'), question: document.getElementById('input-question').value || '單牌速占', spread: 'single', mainDeckId: themeObj.id, mainDeckName: themeObj.name, cards: [], notes: '' };
+            currentRealDeck = shuffleArray(await generateBaseDeck(currentSelectedDeckSize));
+            AutoBot.execute(); 
+        } else {
+            startRitual();
+        }
     };
 
-    modal.classList.remove('hidden'); modal.classList.add('flex');
+    showInitial();
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
 // 供舊牌模式直接展牌使用
@@ -381,7 +459,7 @@ async function startSingleRitualDirectly() {
 // 核心路由導航系統 (防鬼打牆終極版)
 function navTo(screenId, pushToHistory = true) {
     // 🛡️ 1. 攔截機制：如果正在占卜中，企圖回首頁，觸發確認
-    if ((currentState === 'SHUFFLING' || currentState === 'WASHING' || currentState === 'SELECTING' || currentState === 'FANNING' || currentState === 'GATHERED') && screenId === 'screen-home') {
+    if (typeof currentState !== 'undefined' && (currentState === 'SHUFFLING' || currentState === 'WASHING' || currentState === 'SELECTING' || currentState === 'FANNING' || currentState === 'GATHERED') && screenId === 'screen-home') {
         if (isGlobalConfirmShowing) return;
         isGlobalConfirmShowing = true;
 
@@ -433,7 +511,7 @@ function navTo(screenId, pushToHistory = true) {
     }
 
     // 5. 呼吸燈與歷史紀錄推軌控制
-    if (typeof BL !== 'undefined' && currentState !== 'SELECTING') BL.clear();
+    if (typeof BL !== 'undefined' && (typeof currentState === 'undefined' || currentState !== 'SELECTING')) BL.clear();
 
     if (pushToHistory) {
         history.pushState({ screen: screenId }, '', `#${screenId}`);
@@ -624,7 +702,7 @@ window.showToast = function (msg, duration = 3000) {
     // 🛡️ 防禦機制 1：防洗頻 (Spam Filter)
     // 如果 500 毫秒內連續觸發「一模一樣」的訊息，直接擋掉，不讓畫面閃爍
     const now = Date.now();
-    if (msg === window.lastToastMsg && now - window.lastToastTime < 500) return;
+    if (msg === window.lastToastMsg && now-window.lastToastTime < 500) return;
     window.lastToastMsg = msg;
     window.lastToastTime = now;
 
@@ -737,7 +815,7 @@ function rebuildManualDOM() {
 
     // ✨ 核心修正：使用當前實際牌組長度，嚴禁使用固定數值
     const totalCards = currentRealDeck.length;
-    const sliceSpacing = 200 / totalCards;
+    const sliceSpacing = totalCards === 22 ? 6 : 4;
 
     for (let i = 0; i < totalCards; i++) {
         let cardSlice = document.createElement('div');
@@ -851,7 +929,7 @@ async function initSettingsUI() {
     deck.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.id;
-        opt.innerText = c.name.replace('\n', ' - ');
+        opt.innerText = c.name.replace('\n', '-');
         select.appendChild(opt);
     });
 
@@ -1025,7 +1103,6 @@ async function getDeckThemeList() {
     const defaultList = [
         { name: '經典萊德偉特', id: 'cards' },
         { name: '托特塔羅牌', id: 'thoth' },
-        { name: '二次元動漫風', id: 'anime' }
     ];
     return await DB.get('deck_theme_list', defaultList);
 }
@@ -1224,6 +1301,9 @@ function resetRitualEngineContext() {
     drawnCardsStack = [];
     hideSelectionBoundary();
 
+    if (typeof isProcessingDraw !== 'undefined') isProcessingDraw = false;
+    if (typeof isCardRevealing !== 'undefined') isCardRevealing = false;
+
     // 還原按鈕原廠設定
     const btnConfirm = document.getElementById('btn-confirm-draw');
     if (btnConfirm) {
@@ -1246,6 +1326,11 @@ function resetRitualEngineContext() {
         render.context.clearRect(0, 0, render.canvas.width, render.canvas.height);
     }
     cards = [];
+
+    // ✨✨ 補回心肺復甦 1：確保新開局時，物理引擎絕對在運轉！
+    if (typeof Runner !== 'undefined' && typeof runner !== 'undefined' && typeof engine !== 'undefined') {
+        try { Runner.start(runner, engine); } catch (e) { }
+    }
 }
 
 // ==========================================
@@ -1273,8 +1358,7 @@ const originalNavTo = window.navTo;
 window.navTo = function (screenId, pushToHistory = true) { // ✨ 補上原本的第二個參數
 
     // 1. 防護盾攔截邏輯 (維持你原本優良的設計)
-    if ((currentState === 'SHUFFLING' || currentState === 'WASHING' || currentState === 'SELECTING' || currentState === 'FANNING' || currentState === 'GATHERED') && screenId === 'screen-home') {
-
+    if (typeof currentState !== 'undefined' && (currentState === 'SHUFFLING' || currentState === 'WASHING' || currentState === 'SELECTING' || currentState === 'FANNING' || currentState === 'GATHERED') && screenId === 'screen-home') {
         if (isGlobalConfirmShowing) return;
         isGlobalConfirmShowing = true;
 
@@ -1328,31 +1412,22 @@ async function applyThemeColor(colorHex = null) {
 }
 
 // ==========================================
-// ✨ 塔羅牌面主題控制 (連動資料夾路徑)
+// ✨ 塔羅牌面主題控制 (動態讀取自訂牌組版)
 // ==========================================
 async function initDeckThemeSelect() {
     const themeSelect = document.getElementById('setting-deck-theme');
     if (!themeSelect) return;
 
-    // 1. 定義你擁有的牌面主題 (value 必須等於 assets 裡面的資料夾名稱！)
-    const themes = [
-        { value: 'cards', name: '經典偉特 (預設)' },
-    ];
+    // 1. 動態呼叫系統渲染器，從資料庫抓取完整清單
+    if (typeof renderDeckThemeOptions === 'function') {
+        await renderDeckThemeOptions();
+    }
 
-    // 2. 把選項塞進 HTML 的下拉選單裡
-    themeSelect.innerHTML = themes.map(t =>
-        `<option value="${t.value}">${t.name}</option>`
-    ).join('');
-
-    // 3. 讀取目前的設定，讓選單顯示正確的項目
-    const currentTheme = await DB.get('deck_theme', 'cards');
-    themeSelect.value = currentTheme;
-
-    // 4. 當使用者切換選項時，立刻存入資料庫
+    // 2. 當使用者切換選項時，立刻存入資料庫並跳出提示
     themeSelect.addEventListener('change', async (e) => {
         await DB.set('deck_theme', e.target.value);
-        if (typeof showAlert === 'function') {
-            showAlert('🃏 牌面主題已切換！下次抽牌將套用新牌面。');
+        if (typeof showToast === 'function') {
+            showToast('🃏 牌面主題已切換！下次抽牌將套用新牌面。');
         }
     });
 }
@@ -1367,7 +1442,7 @@ window.addEventListener('popstate', (e) => {
     // 核心防禦：連續狂退偵測機制
     const now = Date.now();
     // 如果兩次按下返回鍵的時間間隔小於 400 毫秒
-    if (now - lastPopstateTime < 400) { 
+    if (now-lastPopstateTime < 400) {
         popstateSpamCount++;
         // 如果連續狂按達到 3 次 (代表使用者可能卡住了或在亂按)
         if (popstateSpamCount >= 3) {
@@ -1382,19 +1457,19 @@ window.addEventListener('popstate', (e) => {
         }
     } else {
         // 如果時間間隔正常，代表是正常操作，重置狂按計數器
-        popstateSpamCount = 0; 
+        popstateSpamCount = 0;
     }
     lastPopstateTime = now;
 
     // 🥇 第一優先級：絕對鎖定狀態 (開牌動畫中)
     if (typeof isCardRevealing !== 'undefined' && isCardRevealing) {
         history.pushState({ screen: 'screen-ritual' }, '', '#screen-ritual');
-        if (navigator.vibrate) navigator.vibrate(20); 
-        return; 
+        if (navigator.vibrate) navigator.vibrate(20);
+        return;
     }
 
     // 🥈 第二優先級：解牌室的「牌義解說視窗」是不是正打開著？
-    const meaningModal = document.getElementById('card-meaning-modal'); 
+    const meaningModal = document.getElementById('card-meaning-modal');
     if (meaningModal && !meaningModal.classList.contains('hidden')) {
         if (typeof closeCardMeaning === 'function') {
             closeCardMeaning();
@@ -1402,25 +1477,25 @@ window.addEventListener('popstate', (e) => {
             meaningModal.classList.add('hidden');
             meaningModal.classList.remove('flex');
         }
-        return; 
+        return;
     }
 
     // ✨ 🥈.5 優先級：設定頁的子視窗是不是打開著？
     const subSettingsOverlay = document.getElementById('sub-settings-overlay');
     if (subSettingsOverlay && !subSettingsOverlay.classList.contains('hidden')) {
         if (typeof closeSubSettings === 'function') {
-            closeSubSettings(true); 
+            closeSubSettings(true);
         }
-        return; 
+        return;
     }
 
     // 🥈.7 優先級：百科全書的獨立牌義編輯視窗是不是打開著？
     const dictEditModal = document.getElementById('modal-dict-edit');
     if (dictEditModal && !dictEditModal.classList.contains('hidden')) {
         if (typeof closeDictEdit === 'function') {
-            closeDictEdit(true); 
+            closeDictEdit(true);
         }
-        return; 
+        return;
     }
 
     // 🥉 第三優先級：儀式進行中的「中斷確認」
@@ -1438,12 +1513,12 @@ window.addEventListener('popstate', (e) => {
         }
 
         // 3. 彈出確認視窗，智慧分流確定/取消動作
-        showConfirm('儀式正在進行中，確定要結束占卜回到首頁嗎？', 
-            () => { 
+        showConfirm('儀式正在進行中，確定要結束占卜回到首頁嗎？',
+            () => {
                 // 點擊【確定】：直接去原地重載大掃除（abort 裡面也有安全網）
                 if (typeof abortRitualAndGoHome === 'function') abortRitualAndGoHome();
-            }, 
-            () => { 
+            },
+            () => {
                 // 點擊【取消】：恢復物理引擎運作，讓卡牌繼續暢快飛行
                 if (typeof Runner !== 'undefined' && typeof runner !== 'undefined' && typeof engine !== 'undefined') {
                     try {
@@ -1454,7 +1529,19 @@ window.addEventListener('popstate', (e) => {
                 }
             }
         );
-        return; 
+        return;
+    }
+
+    // ✨ 🌟 優先級 3.5：攔截首頁實體返回鍵，觸發布幕關閉退出動畫
+    const activeScreen = document.querySelector('.screen.active');
+    if (activeScreen && activeScreen.id === 'screen-home' && (!e.state || e.state.exit_trap || e.state.screen !== 'screen-home')) {
+        // 把歷史推回去，阻止預設的瀏覽器退出行為
+        history.pushState({ screen: 'screen-home', sessionId: window.appSessionId }, '', '#screen-home');
+
+        if (typeof playCurtainCloseAnimationAndExit === 'function') {
+            playCurtainCloseAnimationAndExit();
+        }
+        return; // 斷流
     }
 
     // 🌟 優先級 4：正常情況下的畫面切換 (防呆終極版)
@@ -1462,9 +1549,9 @@ window.addEventListener('popstate', (e) => {
     if (e.state && e.state.screen && document.getElementById(e.state.screen)) {
         screenId = e.state.screen;
     }
-    
+
     if (typeof originalNavTo === 'function') {
-        originalNavTo(screenId, false); 
+        originalNavTo(screenId, false);
     } else if (typeof navTo === 'function') {
         navTo(screenId, false);
     }
@@ -1494,6 +1581,11 @@ function abortRitualAndGoHome() {
         Matter.Composite.clear(world);
         // 清除引擎內部殘留的碰撞與受力紀錄
         Matter.Engine.clear(engine);
+    }
+
+    // ✨✨ 補回心肺復甦 2：離開戰場前，喚醒被 popstate 暫停的引擎！
+    if (typeof Runner !== 'undefined' && typeof runner !== 'undefined' && typeof engine !== 'undefined') {
+        try { Runner.start(runner, engine); } catch (e) { }
     }
 
     // 4. 清空所有的資料陣列
@@ -1548,6 +1640,11 @@ function abortRitualAndGoHome() {
         ritualSessionToken = Date.now().toString();
     }
 
+    // ✨ 清除跨牌狀態
+    if (typeof window.crossDrawState !== 'undefined') {
+        window.crossDrawState.active = false;
+    }
+
     // 8. 安全導航回首頁
     if (typeof navTo === 'function') navTo('screen-home');
 }
@@ -1600,9 +1697,10 @@ window.restoreSubSettings = function (category) {
 if (!window.hasHistoryApiUpgraded) {
     window.appSessionId = Date.now(); // ✨ 1. 初始化世代 ID
 
-    // 確保載入時，底層有一個合法的首頁紀錄
-    if (!history.state) {
-        history.replaceState({ screen: 'screen-home', sessionId: window.appSessionId }, '', '#screen-home');
+    // ✨ 確保載入時，底層有一個合法的首頁紀錄，並佈下「退出陷阱」
+    if (!history.state || !history.state.screen) {
+        history.replaceState({ exit_trap: true }, '');
+        history.pushState({ screen: 'screen-home', sessionId: window.appSessionId }, '', '#screen-home');
     }
 
     const originalNavTo = window.navTo;
@@ -1613,6 +1711,11 @@ if (!window.hasHistoryApiUpgraded) {
         if (targetId === 'screen-home') {
             window.isRitualActive = false; // 清除儀式狀態
             window.appSessionId = Date.now(); // ✨ 刷新世代 ID，宣告前面的紀錄全部過期！
+
+            // ✨✨ 補回心肺復甦 3：只要安全回到首頁，確保引擎心跳恢復！
+            if (typeof Runner !== 'undefined' && typeof runner !== 'undefined' && typeof engine !== 'undefined') {
+                try { Runner.start(runner, engine); } catch (e) { }
+            }
 
             if (typeof originalNavTo === 'function') {
                 originalNavTo(targetId);
@@ -1674,22 +1777,7 @@ if (!window.hasHistoryApiUpgraded) {
             spreadModal.classList.add('hidden'); spreadModal.classList.remove('flex');
             return;
         }
-        // ✨ 新增：攔截首頁返回並觸發退出確認
-        const activeScreen = document.querySelector('.screen.active');
-        if (activeScreen && activeScreen.id === 'screen-home' && (!e.state || e.state.screen !== 'screen-home')) {
-            // 把歷史推回去，阻止預設的瀏覽器退出行為
-            history.pushState({ screen: 'screen-home', sessionId: window.appSessionId }, '', '#screen-home');
 
-            //離開確認視窗(已取消)
-            //showConfirm('🔮 確定要結束儀式並離開口袋塔羅嗎？', () => {
-            //    playCurtainCloseAnimationAndExit();
-            //});
-            // 2. 直接呼叫華麗的關閉動畫與退出函數 (拔除 showConfirm)
-            if (typeof playCurtainCloseAnimationAndExit === 'function') {
-                playCurtainCloseAnimationAndExit();
-            }
-            return; // 斷流
-        }
         // 🌟 3. 歷史紀錄過期攔截器 (斷尾求生核心) 🌟
         if (e.state && e.state.sessionId && e.state.sessionId !== window.appSessionId) {
             // 系統發現這是一筆「上一輪占卜」的舊紀錄
@@ -1742,15 +1830,15 @@ window.playSplashAnimation = function () {
             // 🌀 動畫邏輯運算 (尺寸微調)
             if (currentFrame < PHASE_1_FRAMES) {
                 // 【階段一：聚能】 從 1.4 倍縮小到 0.2 倍 (不會超出螢幕了)
-                scale = 1.4 - (currentFrame / PHASE_1_FRAMES) * 1.2;
+                scale = 1.4-(currentFrame / PHASE_1_FRAMES) * 1.2;
                 rotate = currentFrame * 15;
                 opacity = 1;
             } else {
                 // 【階段二：綻放】 從 0.2 倍放大到 2.0 倍 (剛剛好填滿螢幕)
-                let exFrame = currentFrame - PHASE_1_FRAMES;
+                let exFrame = currentFrame-PHASE_1_FRAMES;
                 scale = 0.2 + (exFrame / PHASE_2_FRAMES) * 1.8;
-                rotate = (PHASE_1_FRAMES * 15) - (exFrame * 20);
-                opacity = 1 - (exFrame / PHASE_2_FRAMES);
+                rotate = (PHASE_1_FRAMES * 15)-(exFrame * 20);
+                opacity = 1-(exFrame / PHASE_2_FRAMES);
             }
 
             // ✨ 設定方形初始外觀 (將原本的 w-56 h-56 縮小為 w-40 h-40)
@@ -1817,4 +1905,1394 @@ window.playCurtainCloseAnimationAndExit = function () {
             document.body.innerHTML = '<div style="display:flex; height:100dvh; width:100vw; background:black; color:#d8b4fe; justify-content:center; align-items:center; font-size:1.2rem; letter-spacing:0.3em; font-family:\'Noto Serif TC\', serif; font-weight:bold;">✨ 儀式圓滿結束 ✨</div>';
         }, 1500); // 對應 CSS 裡的 duration-[1.5s]
     }, 50);
+};
+
+let manualSession = {
+    time: '',
+    question: '',
+    spread: 'single',
+    selectedCards: [], // 格式: [ { slotIndex: 0, cardId: 12, name: '吊人' }, ... ]
+};
+
+// 1. 開啟手動設定彈窗
+async function openManualSetupModal() {
+    const modal = document.getElementById('manual-setup-modal');
+    const selectSpread = document.getElementById('manual-spread-select');
+    const selectDeck = document.getElementById('manual-deck-select');
+    
+    const now = new Date();
+    const tzoffset = now.getTimezoneOffset() * 60000; 
+    const localISOTime = (new Date(now-tzoffset)).toISOString().slice(0, 16);
+    document.getElementById('manual-time').value = localISOTime;
+    document.getElementById('manual-question').value = '';
+
+    if (selectDeck) {
+        const themeList = await DB.get('deck_theme_list', [
+            { name: '經典萊德偉特', id: 'cards' },
+            { name: '托特塔羅牌', id: 'thoth' }
+        ]);
+        selectDeck.innerHTML = themeList.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+        const currentTheme = await DB.get('deck_theme', 'cards');
+        selectDeck.value = currentTheme;
+    }
+
+    selectSpread.innerHTML = '';
+    
+    TAROT_SPREADS_CONFIG.forEach(sp => {
+        const opt = document.createElement('option');
+        opt.value = sp.id;
+        const labelName = sp.label || sp.name || sp.id || '未命名牌陣';
+        const iconSymbol = sp.icon || '🔮';
+        if (labelName.includes('張')) opt.innerText = `${iconSymbol} ${labelName}`;
+        else {
+            const countNum = sp.count || sp.cardsNum || sp.cards || (sp.positions ? sp.positions.length : 0) || (sp.slots ? sp.slots.length : 1);
+            opt.innerText = `${iconSymbol} ${labelName} (${countNum}張)`;
+        }
+        selectSpread.appendChild(opt);
+    });
+
+    const customSpreads = await DB.get('custom_spreads', []);
+    customSpreads.forEach((sp, idx) => {
+        const opt = document.createElement('option');
+        opt.value = `custom_saved_${idx}`;
+        const labelName = sp.name;
+        const iconSymbol = sp.icon || '✨';
+        const countNum = sp.meanings ? sp.meanings.length : sp.positions.length;
+        opt.innerText = `${iconSymbol} ${labelName} (${countNum}張)`;
+        selectSpread.appendChild(opt);
+    });
+
+    // ✨ 將記憶體中的自訂抽牌數生成臨時選項
+    if (currentSelectedSpread && currentSelectedSpread.startsWith('custom_dynamic_')) {
+        const count = parseInt(currentSelectedSpread.replace('custom_dynamic_', ''));
+        const opt = document.createElement('option');
+        opt.value = currentSelectedSpread;
+        opt.innerText = `🔢 自訂抽取 (${count}張)`;
+        selectSpread.appendChild(opt);
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeManualSetupModal() {
+    const modal = document.getElementById('manual-setup-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+// ✨ 替換：初始化手動選牌介面
+function initManualDrawInterface() {
+    const totalCount = manualSession.count;
+    const firstSlotName = manualSession.slots[0] || '位置 1';
+
+    // ✨ 核心修復 2：完美同步呼吸燈，精確呈現位置與張數（例如：請選擇第 1 / 7 張牌：【過去】）
+    updateManualBL(`請選擇第 1 / ${totalCount} 張牌：【${firstSlotName}】`);
+
+    // 渲染右上角迷你雷達
+    const spreadConfig = TAROT_SPREADS_CONFIG.find(s => s.id === manualSession.spread) || { slots: manualSession.slots };
+    // 確保 radar 能吃到正確的 slots 長度
+    if (!spreadConfig.slots) {
+        spreadConfig.slots = manualSession.slots;
+    }
+    renderManualRadar(spreadConfig);
+
+    // 渲染文字記錄區
+    renderManualTextList();
+
+    // 渲染 78 張牌的列表
+    renderManualEncyclopediaList();
+
+    // 更新完成按鈕狀態
+    document.getElementById('btn-manual-finish').disabled = true;
+}
+
+function updateManualBL(text) {
+    document.getElementById('manual-bl').innerText = text;
+}
+
+// 渲染迷你雷達縮圖
+function renderManualRadar(config) {
+    const radar = document.getElementById('manual-radar');
+    radar.innerHTML = '';
+
+    // 在 16x16 網格內按比例簡化排列卡牌槽位
+    config.slots.forEach((slot, i) => {
+        const dot = document.createElement('div');
+        dot.id = `radar-dot-${i}`;
+        dot.className = "absolute w-2 h-2 rounded-full border border-yellow-500/50 bg-purple-950 transition-colors duration-300";
+        // 抓取牌陣佈局座標（如果原有代碼有 layout，就依據 layout 換算比例百分比）
+        let x = 40 + (i * 10);
+        let y = 40;
+        if (config.layout && config.layout[i]) {
+            x = config.layout[i].x * 100;
+            y = config.layout[i].y * 100;
+        }
+        dot.style.left = `${x}%`;
+        dot.style.top = `${y}%`;
+        radar.appendChild(dot);
+    });
+}
+
+// ✨ 替換：渲染已選擇的卡牌文字列表
+function renderManualTextList() {
+    const container = document.getElementById('manual-selected-list');
+    container.innerHTML = '';
+
+    // 直接讀取儲存在 session 裡的位置清單
+    manualSession.slots.forEach((slotName, idx) => {
+        const div = document.createElement('div');
+        const selected = manualSession.selectedCards.find(c => c.slotIndex === idx);
+
+        if (selected) {
+            // ✨ 核心修復：直接抓取 selected.name（並去除換行），安全、迅速且絕不報錯！
+            const cardName = selected.name.replace('\n', ' ');
+            div.innerHTML = `<span class="text-yellow-400 font-bold">${slotName}</span>: <span class="text-white">${cardName}</span>`;
+
+            // 同步雷達燈號
+            const dot = document.getElementById(`radar-dot-${idx}`);
+            if (dot) dot.className = "absolute w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_5px_#facc15]";
+        } else {
+            div.innerHTML = `<span class="text-gray-500">${slotName}</span>: <span class="text-gray-600">（待選擇）</span>`;
+
+            const dot = document.getElementById(`radar-dot-${idx}`);
+            if (dot) dot.className = "absolute w-2 h-2 rounded-full border border-purple-500/50 bg-purple-950";
+        }
+        container.appendChild(div);
+    });
+}
+
+// 宣告一個專門給手動選牌與替換功能用的快取
+window.MANUAL_DECK_CACHE = [];
+
+// ✨ 新增：智慧牌陣位置解析器
+async function getSpreadMetaHelper(spreadId) {
+    const defaultSlots = {
+        'single': ['單牌神諭'],
+        'triangle': ['過去', '現在', '未來'],
+        'five': ['過去', '近過去', '現在', '近未來', '未來'],
+        'hexagram': ['過去', '現在', '未來', '環境', '內心', '對策', '結果'],
+        'two_paths': ['現狀', '選擇 A 的現況/過程', '選擇 A 的未來結果', '選擇 B 的現況/過程', '選擇 B 的未來結果'],
+        'tree_of_life': ['王冠 (最高意志/靈性)', '智慧 (原動力/啟發)', '理解 (形式/限制)', '慈悲 (擴張/恩賜)', '嚴厲 (破壞/力量)', '美麗 (核心/和諧)', '勝利 (情感/直覺)', '榮耀 (理智/邏輯)', '基礎 (潛意識/根基)', '王國 (現實顯化/結果)'],
+        'celtic': ['現狀', '阻礙與挑戰 (橫放)', '潛意識的根源', '過去的影響', '意識與目標', '未來的發展', '自我態度', '周遭環境影響', '希望與恐懼', '最終結果'],
+        'horseshoe': ['過去', '現在', '隱藏的影響', '阻礙/挑戰', '周遭環境', '最佳行動/建議', '最終結果'],
+        'zodiac': ['本命/自我 (牡羊)', '財富/價值 (金牛)', '溝通/學習 (雙子)', '家庭/根基 (巨蟹)', '創造/戀愛 (獅子)', '健康/工作 (處女)', '伴侶/合作 (天秤)', '偏財/蛻變 (天蠍)', '進修/遠行 (射手)', '事業/地位 (魔羯)', '人際/願景 (水瓶)', '潛意識/隱藏 (雙魚)'],
+        'romany': Array.from({length: 21}, (_, i) => i < 7 ? `過去 ${i+1}` : (i < 14 ? `現在 ${i-6}` : `未來 ${i-13}`)),
+        'tableau': Array.from({length: 36}, (_, i) => `第 ${i+1} 宮`),
+    };
+
+    if (defaultSlots[spreadId]) {
+        return { slots: defaultSlots[spreadId], count: defaultSlots[spreadId].length };
+    }
+
+    if (spreadId && spreadId.startsWith('custom_saved_')) {
+        const idx = parseInt(spreadId.replace('custom_saved_', ''));
+        const spreads = await DB.get('custom_spreads', []);
+        const s = spreads[idx];
+        if (s) {
+            const slots = s.meanings || (s.positions ? s.positions.map(p => p.meaning || '') : []);
+            const finalSlots = slots.length > 0 ? slots : Array.from({ length: slots.length || 1 }, (_, i) => `位置 ${i + 1}`);
+            return { slots: finalSlots, count: finalSlots.length };
+        }
+    }
+
+    // ✨ 動態自訂抽牌數解析
+    if (spreadId && spreadId.startsWith('custom_dynamic_')) {
+        const count = parseInt(spreadId.replace('custom_dynamic_', ''));
+        const dynamicSlots = Array.from({ length: count }, (_, i) => `第 ${i + 1} 張`);
+        return {
+            slots: dynamicSlots,
+            count: count
+        };
+    }
+
+    return { slots: ['位置 1'], count: 1 };
+}
+
+// ✨ 替換：確認設定並切換到手動選牌介面
+async function confirmManualSetup() {
+    manualSession.time = document.getElementById('manual-time').value.replace('T', ' ');
+    manualSession.question = document.getElementById('manual-question').value || '手動登錄占卜';
+    manualSession.spread = document.getElementById('manual-spread-select').value;
+    manualSession.selectedCards = [];
+
+    // ✨ 記錄所選的主牌組
+    const deckSelect = document.getElementById('manual-deck-select');
+    manualSession.mainDeckId = deckSelect.value;
+    manualSession.mainDeckName = deckSelect.options[deckSelect.selectedIndex].text;
+
+    const meta = await getSpreadMetaHelper(manualSession.spread);
+    manualSession.slots = meta.slots;
+    manualSession.count = meta.count;
+
+    closeManualSetupModal();
+    navTo('screen-manual-draw');
+    
+    // 生成對應的牌組做為手動點選清單
+    window.MANUAL_DECK_CACHE = await generateBaseDeck(78);
+    // 因為 generateBaseDeck 會吃 currentTheme，我們暫時切換
+    const tempTheme = await DB.get('deck_theme', 'cards');
+    await DB.set('deck_theme', manualSession.mainDeckId);
+    window.MANUAL_DECK_CACHE = await generateBaseDeck(78);
+    await DB.set('deck_theme', tempTheme); // 產完還原
+    
+    initManualDrawInterface();
+}
+
+// 2. 渲染 78 張牌基底 (改用 MANUAL_DECK_CACHE)
+function renderManualEncyclopediaList() {
+    const container = document.getElementById('manual-encyclopedia-container');
+    container.innerHTML = '';
+
+    // 建立卡牌網格 (使用 sm:grid-cols-5 讓手機版顯示更漂亮)
+    const grid = document.createElement('div');
+    grid.className = "grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 pb-12";
+
+    window.MANUAL_DECK_CACHE.forEach((card) => {
+        const cardBox = document.createElement('div');
+        cardBox.id = `manual-card-item-${card.id}`;
+        cardBox.className = "relative bg-indigo-950/40 border border-purple-500/20 rounded-md p-1 flex flex-col items-center cursor-pointer transition-all hover:scale-105 active:scale-95";
+
+        // 判斷這張牌是否已經被選中
+        const isAlreadySelected = manualSession.selectedCards.some(c => c.cardId === card.id);
+
+        cardBox.innerHTML = `
+            <div class="w-full aspect-[2/3] bg-purple-900/30 rounded overflow-hidden relative">
+                <img src="${card.image}" onerror="this.src='./assets/cards/cardback.jpg'" class="w-full h-full object-cover ${isAlreadySelected ? 'opacity-30 blur-[1px]' : ''}" loading="lazy">
+                ${isAlreadySelected ? '<div class="absolute inset-0 bg-black/60 flex items-center justify-center text-xs text-yellow-300 font-bold">已選</div>' : ''}
+            </div>
+            <span class="text-[10px] mt-1 truncate text-gray-300 w-full text-center">${card.name.replace('\n', ' ')}</span>
+        `;
+
+        if (!isAlreadySelected) {
+            cardBox.addEventListener('click', () => selectManualCard(card.id));
+        }
+
+        grid.appendChild(cardBox);
+    });
+
+    container.appendChild(grid);
+}
+
+// ✨ 替換：選取卡牌後的狀態推移
+function selectManualCard(cardId) {
+    const totalCount = manualSession.count;
+    const nextSlotIdx = manualSession.selectedCards.length;
+
+    if (nextSlotIdx >= totalCount) return;
+
+    const el = document.getElementById(`manual-card-item-${cardId}`);
+    if (el) el.classList.add('animate-bounce', 'border-yellow-400');
+
+    const cardInfo = window.MANUAL_DECK_CACHE.find(c => c.id === cardId);
+
+    setTimeout(() => {
+        manualSession.selectedCards.push({
+            slotIndex: nextSlotIdx,
+            cardId: cardInfo.id,
+            name: cardInfo.name,
+            image: cardInfo.image
+        });
+
+        renderManualTextList();
+        renderManualEncyclopediaList();
+
+        const nextCount = manualSession.selectedCards.length;
+        if (nextCount < totalCount) {
+            // ✨ 核心修復 3：推進下一張時，從 slots 中精確撈出下一個位置名稱
+            const nextSlotName = manualSession.slots[nextCount];
+            updateManualBL(`請選擇第 ${nextCount + 1} / ${totalCount} 張牌：【${nextSlotName}】`);
+        } else {
+            updateManualBL('🎉 牌盤登錄完成！請確認儲存。');
+            document.getElementById('btn-manual-finish').disabled = false;
+        }
+    }, 200);
+}
+
+// 1. 修正手動登錄完成後的儲存位置 (確保對齊 history 資料表)
+async function finishManualRitual() {
+    const config = TAROT_SPREADS_CONFIG.find(s => s.id === manualSession.spread);
+    
+    const newRecord = {
+        id: 'manual_' + Date.now().toString(),
+        date: manualSession.time,
+        question: manualSession.question,
+        spread: manualSession.spread,
+        spreadLabel: config.label || config.name,
+        source: 'manual', 
+        mainDeckId: manualSession.mainDeckId || 'cards',         // ✨
+        mainDeckName: manualSession.mainDeckName || '經典偉特', // ✨
+        cards: manualSession.selectedCards.map(c => ({
+            id: c.cardId,
+            name: c.name,
+            image: c.image, 
+            isReversed: false,
+            slotIndex: c.slotIndex
+        })),
+        modifications: [],
+        notes: ''
+    };
+
+    let history = await DB.get('history', []); 
+    history.unshift(newRecord);
+    await DB.set('history', history);
+    
+    showToast('✨ 紀錄已儲存！');
+    
+    setTimeout(async () => {
+        await renderHistoryList();
+        navTo('screen-history');
+        showRecordDetails(newRecord, false);
+    }, 1000);
+}
+
+// 5. 快速分類篩選 (改為比對卡牌的 type 屬性)
+function filterManualCards(type) {
+    document.querySelectorAll('.manual-filter-btn').forEach(btn => {
+        btn.classList.remove('bg-yellow-500', 'text-slate-900', 'font-bold');
+        btn.classList.add('bg-purple-900/60');
+    });
+    event.target.classList.remove('bg-purple-900/60');
+    event.target.classList.add('bg-yellow-500', 'text-slate-900', 'font-bold');
+
+    const cardBoxes = document.querySelectorAll('[id^="manual-card-item-"]');
+    cardBoxes.forEach(box => {
+        const cardId = box.id.replace('manual-card-item-', '');
+        const card = window.MANUAL_DECK_CACHE.find(c => c.id === cardId);
+
+        let match = false;
+        if (type === 'all') match = true;
+        else if (type === card.type) match = true; // ✨ 你的卡牌物件自帶 type (major, wands...)
+
+        box.style.display = match ? 'flex' : 'none';
+    });
+}
+
+// 6. 反悔與中斷
+function undoLastManualCard() {
+    if (manualSession.selectedCards.length === 0) return;
+
+    manualSession.selectedCards.pop();
+    document.getElementById('btn-manual-finish').disabled = true;
+
+    const config = TAROT_SPREADS_CONFIG.find(s => s.id === manualSession.spread);
+    const nextCount = manualSession.selectedCards.length;
+    updateManualBL(`請選擇第 ${nextCount + 1} / ${config.count} 張牌：【${config.slots[nextCount]}】`);
+
+    renderManualTextList();
+    renderManualEncyclopediaList();
+}
+
+function abortManualDraw() {
+    showConfirm("確定要中斷手動登錄並返回主頁嗎？", () => {
+        navTo('screen-home');
+    });
+}
+
+let currentDetailRecord = null; // 當前瀏覽中的紀錄副本
+let originalRecordBackup = null; // 原始紀錄備份（用以比對與放棄變更）
+let isModifyingState = false; // 是否正在進行牌陣修改
+let selectedReplacementCardId = null; // 替換視窗中被選中的卡牌 ID
+let slotIndexToReplace = null; // 正在進行替换的牌陣槽位
+// ✨ 全域問題修改函數
+window.editRecordQuestion = async function () {
+    if (window.isInTrashView || (typeof isModifyingState !== 'undefined' && isModifyingState)) return;
+
+    const newQ = prompt('✏️ 請輸入新的問題：', currentDetailRecord.question || '');
+    if (newQ !== null && newQ.trim() !== '') {
+        currentDetailRecord.question = newQ.trim();
+
+        // 立即更新解牌室畫面上的文字
+        const qEl = document.getElementById('reading-question');
+        if (qEl) qEl.innerHTML = `${currentDetailRecord.question} <button onclick="editRecordQuestion()" class="text-sm ml-2 opacity-60 hover:opacity-100 transition-opacity cursor-pointer">✏️</button>`;
+
+        // 存入資料庫
+        let history = await DB.get('history', []);
+        const idx = history.findIndex(r => r.id === currentDetailRecord.id);
+        if (idx !== -1) {
+            history[idx].question = currentDetailRecord.question;
+            await DB.set('history', history);
+            if (typeof showToast === 'function') showToast('✅ 問題已更新！');
+
+            // ✨ 核心修復：強制刷新背景清單，確保列表同步更新
+            window.allHistoryRecords = await DB.get('history', []);
+            if (typeof window.applyHistoryFilters === 'function') window.applyHistoryFilters();
+        }
+    }
+};
+
+// A. 顯示紀錄詳情 (流暢淡入、零閃爍版)
+window.showRecordDetails = function (record, isReadOnly = false) {
+    currentDetailRecord = JSON.parse(JSON.stringify(record)); // 深拷貝
+    originalRecordBackup = JSON.parse(JSON.stringify(record));
+    if (typeof isModifyingState !== 'undefined') isModifyingState = false;
+    currentViewingRecordId = record.id;
+
+    // ✨ 流暢度優化 1：先將按鈕區塊設為「完全透明」，隱藏變身前的舊按鈕
+    const readingButtons = document.getElementById('reading-buttons');
+    if (readingButtons) {
+        readingButtons.style.transition = 'none'; // 移除漸變，瞬間隱形
+        readingButtons.style.opacity = '0';
+    }
+
+    // 1. 呼叫原始渲染函數 (它會在內部畫出舊按鈕，但目前是透明的)
+    if (typeof renderReadingRoom === 'function') renderReadingRoom(currentDetailRecord, false);
+
+    // 2. 處理手動新增的修改牌盤按鈕
+    const btnModify = document.getElementById('btn-modify-manual-record');
+    const btnDiscard = document.getElementById('btn-discard-modifications');
+    if (btnModify && btnDiscard) {
+        if (record.source === 'manual' && !isReadOnly) {
+            btnModify.classList.remove('hidden');
+            btnModify.onclick = () => startModifyingMode();
+        } else {
+            btnModify.classList.add('hidden');
+        }
+        btnDiscard.classList.add('hidden');
+    }
+
+    // 3. 渲染修改軌跡履歷
+    if (typeof renderModificationLogs === 'function') renderModificationLogs(currentDetailRecord);
+
+    // ✨ 流暢度優化 2：微延遲變身，變身完畢後再「淡入顯示」
+    setTimeout(() => {
+        // --- 處理問題小鉛筆 ---
+        const qEl = document.getElementById('reading-question');
+        if (qEl) {
+            const safeQuestion = currentDetailRecord.question || '無設定問題';
+            if (isReadOnly) {
+                qEl.innerHTML = safeQuestion; // 回收桶內唯讀
+            } else {
+                qEl.innerHTML = `${safeQuestion} <button onclick="editRecordQuestion()" class="text-sm ml-2 opacity-60 hover:opacity-100 transition-opacity cursor-pointer">✏️</button>`;
+            }
+        }
+
+        // --- 處理按鈕變身術 ---
+        if (readingButtons) {
+            const buttons = readingButtons.querySelectorAll('button');
+
+            buttons.forEach(btn => {
+                const originalText = btn.innerText;
+                const originalClick = btn.getAttribute('onclick') || '';
+
+                // 變身：刪除按鈕
+                if (originalClick.includes('delete') || originalText.includes('刪除')) {
+                    if (isReadOnly) btn.innerText = '🔥 永久刪除';
+                    else btn.innerText = '🗑️ 刪除';
+                    btn.setAttribute('onclick', 'deleteCurrentRecord()');
+                }
+
+                // 變身：備註按鈕 -> 還原按鈕
+                if (originalClick.includes('Note') || originalClick.includes('note') || originalText.includes('備註') || originalClick.includes('restoreCurrentRecord')) {
+                    if (!btn.hasAttribute('data-original-onclick')) {
+                        btn.setAttribute('data-original-onclick', originalClick);
+                    }
+
+                    if (isReadOnly) {
+                        btn.innerText = '♻️ 還原';
+                        btn.setAttribute('onclick', 'restoreCurrentRecord()');
+                    } else {
+                        btn.innerText = '✏️ 更新備註';
+                        btn.setAttribute('onclick', btn.getAttribute('data-original-onclick'));
+                    }
+                }
+            });
+
+            // ✨ 變身完成，執行優雅的淡入動畫 (Fade-in)
+            requestAnimationFrame(() => {
+                readingButtons.style.transition = 'opacity 0.25s ease-in-out';
+                readingButtons.style.opacity = '1';
+            });
+        }
+    }, 30); // 縮短為 30 毫秒，足以避開重繪，又不會覺得有延遲感
+};
+
+// B. 啟動修改模式 (修正版)
+function startModifyingMode() {
+    isModifyingState = true;
+    showToast('⚙️ 已進入編輯模式，點擊牌面可替換卡牌');
+
+    // 下方按鈕切換：隱藏修改按鈕，顯示放棄按鈕
+    document.getElementById('btn-modify-manual-record').classList.add('hidden');
+
+    const btnDiscard = document.getElementById('btn-discard-modifications');
+    if (btnDiscard) {
+        btnDiscard.classList.remove('hidden');
+        btnDiscard.onclick = () => discardModifications();
+    }
+
+    // ✨ 隱藏解牌室原本的 返回/刪除/更新 按鈕，避免畫面太擠
+    const readingButtons = document.getElementById('reading-buttons');
+    if (readingButtons) readingButtons.classList.add('hidden');
+
+    // ✨ 核心修復：抓取你系統中真正的卡牌 class ('history-card')
+    const cardsOnBoard = document.querySelectorAll('.history-card');
+    cardsOnBoard.forEach((cardEl, idx) => {
+        cardEl.classList.add('modifying-shake');
+
+        // 覆寫點擊事件：從原本的「打開牌義」，變成「打開卡牌替換視窗」
+        cardEl.onclick = (e) => {
+            e.stopPropagation(); // 防止觸發其他層的點擊
+            openReplacementModal(idx);
+        };
+    });
+}
+
+// C. 放棄變更 (修正版)
+function discardModifications() {
+    isModifyingState = false;
+    // 還原備份
+    currentDetailRecord = JSON.parse(JSON.stringify(originalRecordBackup));
+
+    // ✨ 恢復解牌室原本的按鈕顯示
+    const readingButtons = document.getElementById('reading-buttons');
+    if (readingButtons) readingButtons.classList.remove('hidden');
+
+    // 重新渲染畫面
+    showRecordDetails(currentDetailRecord, false);
+    showToast('已放棄變更');
+}
+
+// D. 開啟卡牌替換百科視窗
+async function openReplacementModal(slotIdx) {
+    slotIndexToReplace = slotIdx;
+    selectedReplacementCardId = null;
+
+    const spreadConfig = TAROT_SPREADS_CONFIG.find(s => s.id === currentDetailRecord.spread);
+    const slotName = spreadConfig.slots[slotIdx];
+    const currentCardOnSlot = currentDetailRecord.cards[slotIdx];
+
+    // 設定左上資訊
+    document.getElementById('replacement-meta-title').innerText = `目前位置：【${slotName}】 原始牌：[${currentCardOnSlot.name}]`;
+
+    // 初始化右上虛線目標框
+    const targetBox = document.getElementById('target-replacement-box');
+    targetBox.innerHTML = '<span class="text-[8px] text-gray-500 text-center">尚未<br>選擇</span>';
+
+    document.getElementById('btn-confirm-replace').disabled = true;
+
+    // 渲染排除已經在陣上的其他 70+ 張牌
+    const encyclopediaGrid = document.getElementById('replacement-encyclopedia-grid');
+    encyclopediaGrid.innerHTML = '';
+
+    const grid = document.createElement('div');
+    grid.className = "grid grid-cols-4 gap-2";
+
+    // 抓取目前全陣上正在被使用的卡牌 ID 清單
+    const cardsOnBoardIds = currentDetailRecord.cards.map(c => c.id);
+
+    // ✨ 如果記憶體沒有快取，立刻生成一份
+    if (!window.MANUAL_DECK_CACHE || window.MANUAL_DECK_CACHE.length === 0) {
+        window.MANUAL_DECK_CACHE = await generateBaseDeck(78);
+    }
+
+    // ✨ 迭代取代原本的 TAROT_CARDS_DATA
+    window.MANUAL_DECK_CACHE.forEach((card) => {
+        const id = card.id;
+        if (cardsOnBoardIds.includes(id) && id !== currentCardOnSlot.id) return;
+
+        const cardItem = document.createElement('div');
+        cardItem.className = "bg-purple-950/50 border border-purple-500/20 rounded p-1 flex flex-col items-center cursor-pointer transition-all hover:scale-105";
+
+        cardItem.innerHTML = `
+            <div class="w-full aspect-[2/3] rounded overflow-hidden">
+                <img src="${card.image}" class="w-full h-full object-cover" loading="lazy">
+            </div>
+            <span class="text-[10px] mt-1 text-gray-300 truncate w-full text-center">${card.name.replace('\n', ' ')}</span>
+        `;
+        cardItem.onclick = () => selectCardToReplacementBox(id);
+        grid.appendChild(cardItem);
+    });
+
+    encyclopediaGrid.appendChild(grid);
+
+    const modal = document.getElementById('card-replacement-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeReplacementModal() {
+    const modal = document.getElementById('card-replacement-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+// E. 點擊百科的牌跳入右上角虛線框
+function selectCardToReplacementBox(cardId) {
+    selectedReplacementCardId = cardId;
+    //const card = TAROT_CARDS_DATA[cardId];
+    const card = window.MANUAL_DECK_CACHE.find(c => c.id === cardId); // ✨ 改用快取抓資料
+
+    const targetBox = document.getElementById('target-replacement-box');
+    targetBox.innerHTML = `
+        <img src="./assets/cards/${card.img}" class="w-full h-full object-cover rounded">
+        <div class="absolute bottom-0 inset-x-0 bg-black/80 text-[8px] text-yellow-300 text-center py-0.5 truncate">${card.name}</div>
+    `;
+
+    document.getElementById('btn-confirm-replace').disabled = false;
+}
+
+// F. 執行替換與軌跡運算
+async function executeCardReplacement() {
+    if (selectedReplacementCardId === null || slotIndexToReplace === null) return;
+
+    const originalCardId = originalRecordBackup.cards[slotIndexToReplace].id;
+    const previousCardId = currentDetailRecord.cards[slotIndexToReplace].id;
+    const newCardId = selectedReplacementCardId;
+
+    if (previousCardId === newCardId) {
+        closeReplacementModal();
+        return; // 沒變
+    }
+
+    // 替換牌陣陣上的資料
+    currentDetailRecord.cards[slotIndexToReplace].id = newCardId;
+    currentDetailRecord.cards[slotIndexToReplace].name = TAROT_CARDS_DATA[newCardId].name;
+
+    // 💡 替換軌跡運算邏輯 (5-6)：
+    // 如果修改回「原始牌」，該條修改履歷會消除。
+    const dateStr = new Date().toLocaleString('zh-TW');
+    const spreadConfig = TAROT_SPREADS_CONFIG.find(s => s.id === currentDetailRecord.spread);
+    const slotName = spreadConfig.slots[slotIndexToReplace];
+
+    // 先剔除掉該槽位先前的任何修改紀錄，重新計算最新軌跡
+    currentDetailRecord.modifications = currentDetailRecord.modifications.filter(m => m.slotIndex !== slotIndexToReplace);
+
+    // 如果最新被改成的牌與原始牌不同，則塞入履歷
+    if (newCardId !== originalCardId) {
+        currentDetailRecord.modifications.push({
+            time: dateStr,
+            slotIndex: slotIndexToReplace,
+            slotName: slotName,
+            fromName: TAROT_CARDS_DATA[originalCardId].name,
+            toName: TAROT_CARDS_DATA[newCardId].name
+        });
+    }
+
+    // 儲存至資料庫
+    let history = await DB.get('history_records', []);
+    const idx = history.findIndex(r => r.id === currentDetailRecord.id);
+    if (idx !== -1) {
+        history[idx] = currentDetailRecord;
+        await DB.set('history_records', history);
+    }
+
+    closeReplacementModal();
+    showToast('✨ 替換成功！');
+
+    // 重新載入，套用修改
+    showRecordDetails(currentDetailRecord, false);
+}
+
+// G. 渲染修改履歷 (功能 5-6)
+function renderModificationLogs(record) {
+    const section = document.getElementById('modification-log-section');
+    const list = document.getElementById('modification-log-list');
+
+    if (!record.modifications || record.modifications.length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+
+    record.modifications.forEach(log => {
+        const item = document.createElement('div');
+        item.className = "flex justify-between py-1 border-b border-white/5";
+        item.innerHTML = `
+            <span class="text-gray-400 font-mono">${log.time}</span>
+            <span class="text-yellow-100 font-bold">${log.slotName}</span>
+            <span class="text-gray-300">將 <span class="text-red-400">[${log.fromName}]</span> 變更為 <span class="text-green-400">[${log.toName}]</span></span>
+        `;
+        list.appendChild(item);
+    });
+}
+
+// ==========================================
+// 🔍 搜尋過濾框收闔控制
+// ==========================================
+window.toggleHistoryFilter = function () {
+    const filterBar = document.getElementById('history-filter-bar');
+    const toggleBtn = document.getElementById('btn-filter-toggle');
+
+    if (!filterBar) return;
+
+    if (filterBar.classList.contains('hidden')) {
+        // 展開：先移除 hidden 讓它進入畫面，再執行滑入淡入動畫
+        filterBar.classList.remove('hidden');
+        filterBar.style.opacity = '0';
+        filterBar.style.transform = 'translateY(-15px) scaleY(0.9)';
+        toggleBtn.classList.add('opacity-50', 'scale-90'); // 放大鏡按下去時變暗縮小
+
+        requestAnimationFrame(() => {
+            filterBar.style.transition = 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'; // Q彈的展開特效
+            filterBar.style.opacity = '1';
+            filterBar.style.transform = 'translateY(0) scaleY(1)';
+        });
+    } else {
+        // 收闔：先執行滑出淡出動畫，結束後再真正 hidden
+        filterBar.style.transition = 'all 0.2s ease-in-out';
+        filterBar.style.opacity = '0';
+        filterBar.style.transform = 'translateY(-10px) scaleY(0.95)';
+        toggleBtn.classList.remove('opacity-50', 'scale-90');
+
+        setTimeout(() => {
+            filterBar.classList.add('hidden');
+        }, 200); // 配合 transition 的 0.2 秒
+    }
+};
+
+// ==========================================
+// 📋 一鍵複製解牌結果至剪貼簿
+// ==========================================
+window.copyReadingResults = async function () {
+    const record = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData : currentDetailRecord;
+    if (!record || !record.cards) return;
+
+    const customSpreads = await DB.get('custom_spreads', []);
+    let spreadName = '單牌神諭';
+    if (record.spread === 'triangle') spreadName = '聖三角';
+    else if (record.spread === 'five') spreadName = '五張序';
+    else if (record.spread === 'hexagram') spreadName = '六芒星';
+    else if (record.spread.startsWith('custom_saved_')) {
+        const idx = parseInt(record.spread.replace('custom_saved_', ''));
+        spreadName = customSpreads[idx] ? customSpreads[idx].name : '自訂牌陣';
+    } else if (record.spread.startsWith('custom_dynamic_')) {
+        const count = parseInt(record.spread.replace('custom_dynamic_', ''));
+        spreadName = `自訂抽取 (${count}張)`;
+    }
+
+    const deckName = record.mainDeckName || '預設牌組';
+    let resultText = `問題：${record.question || '無'}\n主牌陣：${spreadName}\n主牌組：${deckName}\n${record.date || new Date().toLocaleString('zh-TW')}\n\n`;
+
+    // 輸出主牌陣 (與其身上的補充神諭)
+    resultText += `【主牌解讀】\n`;
+    record.cards.forEach(c => {
+        const slotName = record.spread === 'single' ? '' : getSpreadSlotName(record.spread, c.slotIndex, customSpreads);
+        const cardName = c.name.split('\n').pop().trim();
+        const deckKey = c.image.match(/assets\/([^\/]+)\//) ? c.image.match(/assets\/([^\/]+)\//)[1] : 'cards';
+        const isThoth = deckKey === 'thoth';
+        const orientationText = isThoth ? '' : (c.isReversed ? '(逆位)' : '(正位)');
+
+        let line = record.spread === 'single' ? `${cardName}${orientationText}` : `${slotName}：${cardName}${orientationText}`;
+
+        // 附加補充神諭資訊
+        if (record.crossDraws) {
+            const supplements = record.crossDraws.filter(d => d.type === 'single' && d.slotIndex === c.slotIndex);
+            supplements.forEach(sup => {
+                const supName = sup.card.name.split('\n').pop().trim();
+                const supOri = sup.card.isReversed ? '逆位' : '正位';
+                line += ` (補充：${sup.deckName}-${supName} ${supOri})`;
+            });
+        }
+        resultText += line + '\n';
+    });
+
+    // 輸出全牌陣跨牌
+    if (record.crossDraws) {
+        const fullLayers = record.crossDraws.filter(d => d.type === 'full');
+        fullLayers.forEach((layer, idx) => {
+            resultText += `\n【跨牌對照 ${idx + 1}：${layer.deckName}】\n`;
+            layer.cards.forEach(c => {
+                const slotName = record.spread === 'single' ? '' : getSpreadSlotName(record.spread, c.slotIndex, customSpreads);
+                const cardName = c.name.split('\n').pop().trim();
+                const layerDeckKey = c.image.match(/assets\/([^\/]+)\//) ? c.image.match(/assets\/([^\/]+)\//)[1] : 'cards';
+                const isLayerThoth = layerDeckKey === 'thoth';
+                const orientationText = isLayerThoth ? '' : (c.isReversed ? '(逆位)' : '(正位)');
+                
+                resultText += record.spread === 'single' ? `${cardName}${orientationText}\n` : `${slotName}：${cardName}${orientationText}\n`;
+            });
+        });
+    }
+
+    // 執行複製
+    try {
+        await navigator.clipboard.writeText(resultText.trim());
+        if (typeof showToast === 'function') showToast('📋 占卜與跨牌結果已複製！');
+    } catch (err) {
+        const textArea = document.createElement("textarea");
+        textArea.value = resultText.trim();
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            if (typeof showToast === 'function') showToast('📋 占卜結果已複製到剪貼簿！');
+        } catch (err2) {
+            if (typeof showToast === 'function') showToast('❌ 複製失敗，請確認瀏覽器權限');
+        }
+        document.body.removeChild(textArea);
+    }
+};
+
+// ==========================================
+// ➕ 跨牌與神諭補充系統
+// ==========================================
+window.currentDisplayLayer = -1; // -1 代表主牌陣，0 以上代表全牌陣跨牌層級
+
+window.openCrossDrawModal = async function() {
+    const record = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData : currentDetailRecord;
+    const slotGrid = document.getElementById('cross-draw-slot-grid');
+    const deckSelect = document.getElementById('cross-draw-deck');
+    const modeSelect = document.getElementById('cross-draw-mode');
+    const customSpreads = await DB.get('custom_spreads', []);
+
+    // ✨ 1. 動態產生「可複選」的按鈕，點擊時會切換黃色背景
+    slotGrid.innerHTML = record.cards.map(c => {
+        const slotName = record.spread === 'single' ? '單牌神諭' : getSpreadSlotName(record.spread, c.slotIndex, customSpreads);
+        return `<button type="button" data-val="${c.slotIndex}" 
+            class="cross-slot-btn px-2.5 py-1 text-xs border border-purple-500 rounded bg-purple-900/60 text-purple-200 transition-colors" 
+            onclick="this.classList.toggle('bg-yellow-500'); this.classList.toggle('text-purple-950'); this.classList.toggle('font-bold'); this.classList.toggle('bg-purple-900/60'); this.classList.toggle('text-purple-200');">
+            ${slotName}
+        </button>`;
+    }).join('');
+
+    // ======= 【替換為以下】 =======
+    const currentTheme = await DB.get('deck_theme', 'cards');
+    const themeList = await DB.get('deck_theme_list', [{ name: '經典萊德偉特', id: 'cards' }, { name: '托特塔羅牌', id: 'thoth' }]);
+    
+    // ✨ 修正 3：智慧迴避，自動挑選與當前主牌不同的牌組
+    let defaultSelectIdx = 0;
+    if (themeList.length > 1) {
+        const currentIdx = themeList.findIndex(t => t.id === currentTheme);
+        if (currentIdx !== -1) {
+            defaultSelectIdx = (currentIdx + 1) % themeList.length; 
+        }
+    }
+
+    deckSelect.innerHTML = themeList.map((t, idx) => `<option value="${t.id}" ${idx === defaultSelectIdx ? 'selected' : ''}>${t.name}</option>`).join('');
+    const modeContainer = modeSelect.parentElement;
+    const slotContainer = document.getElementById('cross-draw-slot-container');
+    
+    if (record.spread === 'single') {
+        modeSelect.value = 'full';
+        modeContainer.style.display = 'none';
+        slotContainer.style.display = 'none';
+    } else {
+        modeContainer.style.display = 'block';
+        modeSelect.value = 'single';
+        slotContainer.style.display = 'block';
+    }
+
+    document.getElementById('cross-draw-modal').classList.replace('hidden', 'flex');
+};
+
+window.executeCrossDraw = async function() {
+    const record = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData : currentDetailRecord;
+    if (!record.crossDraws) record.crossDraws = [];
+
+    const mode = document.getElementById('cross-draw-mode').value;
+    const deckId = document.getElementById('cross-draw-deck').value;
+    const deckName = document.getElementById('cross-draw-deck').options[document.getElementById('cross-draw-deck').selectedIndex].text;
+    
+    // ✨ 2. 蒐集所有被使用者點亮的按鈕 (陣列格式)
+    let selectedSlots = [];
+    if (mode === 'single') {
+        const activeBtns = document.querySelectorAll('.cross-slot-btn.bg-yellow-500');
+        activeBtns.forEach(btn => selectedSlots.push(parseInt(btn.dataset.val)));
+        
+        if (selectedSlots.length === 0) {
+            if (typeof showToast === 'function') showToast('請至少選擇一個目標牌位！');
+            return;
+        }
+    }
+
+    const originalTheme = await DB.get('deck_theme', 'cards');
+
+    window.crossDrawState = {
+        active: true,
+        type: mode,
+        slotIndices: selectedSlots, // ✨ 記錄所選的多個位置
+        deckId: deckId,
+        deckName: deckName,
+        originalTheme: originalTheme,
+        parentRecord: JSON.parse(JSON.stringify(record)) 
+    };
+
+    document.getElementById('cross-draw-modal').classList.replace('flex', 'hidden');
+    await DB.set('deck_theme', deckId);
+    resetRitualEngineContext();
+    isRitualActive = true; 
+    
+    // ✨ 3. 如果選了 1 張以上，我們給他一個專屬的動態牌陣名稱 'multi_cross'
+    const dynamicSpreadType = mode === 'single' ? (selectedSlots.length === 1 ? 'single' : 'multi_cross') : record.spread;
+
+    currentRitualData = {
+        id: 'cross_' + Date.now().toString(),
+        date: new Date().toLocaleString('zh-TW'),
+        question: '跨牌補充神諭',
+        spread: dynamicSpreadType, 
+        cards: [],
+        notes: ''
+    };
+
+    // ✨ 4. 抽後不放回：過濾已使用的牌 (支援多重牌位過濾)
+    let baseDeck = await generateBaseDeck(78);
+    let usedIds = new Set();
+    const getDeckIdFromImage = (imgUrl) => {
+        if (!imgUrl) return 'cards';
+        const match = imgUrl.match(/assets\/([^\/]+)\//);
+        return match ? match[1] : 'cards';
+    };
+
+    if (mode === 'single') {
+        // 針對「每一個被選中的位置」去檢查有沒有牌被用過
+        selectedSlots.forEach(slotIdx => {
+            const origCard = record.cards.find(c => c.slotIndex === slotIdx);
+            if (origCard && getDeckIdFromImage(origCard.image) === deckId) usedIds.add(origCard.id);
+            const prevSingles = record.crossDraws.filter(d => d.type === 'single' && d.slotIndex === slotIdx && d.deckId === deckId);
+            prevSingles.forEach(d => usedIds.add(d.card.id));
+        });
+    } else {
+        record.cards.forEach(c => { if (getDeckIdFromImage(c.image) === deckId) usedIds.add(c.id); });
+        const prevFulls = record.crossDraws.filter(d => d.type === 'full' && d.deckId === deckId);
+        prevFulls.forEach(d => d.cards.forEach(c => usedIds.add(c.id)));
+    }
+
+    let availableDeck = baseDeck.filter(c => !usedIds.has(c.id));
+    const requiredCards = mode === 'single' ? selectedSlots.length : record.cards.length;
+    if (availableDeck.length < requiredCards) availableDeck = baseDeck; // 防呆
+    currentRealDeck = shuffleArray(availableDeck);
+
+    const overlay = document.getElementById('pre-shuffle-overlay');
+    if (overlay) { overlay.classList.remove('hidden'); overlay.classList.add('flex'); }
+
+    setTimeout(async () => {
+        if (overlay) { overlay.classList.remove('flex'); overlay.classList.add('hidden'); }
+        const val = await DB.get('stage_shuffle', true);
+        if (val !== 'false' && val !== false) {
+            currentState = 'SHUFFLING'; initManualShuffleScreen();
+        } else proceedToNextStage();
+    }, 1200);
+};
+
+// ✨ 核心翻牌動畫引擎 (切換跨牌時觸發)
+window.animateCardReveal = function(slotIndex, targetCard, record) {
+    const flipEl = document.getElementById(`reading-flip-${slotIndex}`);
+    const textEl = document.getElementById(`reading-text-${slotIndex}`);
+    if (!flipEl || !textEl) return;
+
+    // 1. 翻回牌背
+    flipEl.style.transform = 'rotateY(0deg)';
+    textEl.style.opacity = '0';
+
+    setTimeout(() => {
+        // 2. 在背面時更換內容
+        const imgFlipStyle = targetCard.isReversed ? 'transform: rotateY(180deg) rotateZ(180deg);' : 'transform: rotateY(180deg);';
+        flipEl.children[1].style.cssText = `backface-visibility: hidden; background-image: url('${targetCard.image}'); ${imgFlipStyle}`;
+        
+        // ✨ 修正點 1：把這段移上來！先抓取牌組名稱 (deckKey)，才能判斷是不是托特牌
+        const deckKey = targetCard.image.match(/assets\/([^\/]+)\//) ? targetCard.image.match(/assets\/([^\/]+)\//)[1] : 'cards';
+        const deckNames = { 'cards': '偉特', 'thoth': '托特', 'anime': '動漫' };
+        const deckNameShort = deckNames[deckKey] || '自訂';
+
+        // ✨ 修正點 2：套用托特翻譯濾鏡 (將原本的 targetCard.name 替換為 displayCardName)
+        const displayCardName = (deckKey === 'thoth' && typeof translateCardName === 'function') ? translateCardName(targetCard.name, deckKey) : targetCard.name;
+        
+        // ✨ 修正：判斷是否為托特牌，動畫翻轉出來時也要將 HTML 隱藏
+        const cleanName = displayCardName.replace(/(大|小)阿爾克那\s*[-・]?\s*/g, '').trim();
+        const isThoth = deckKey === 'thoth';
+        const orientationText = targetCard.isReversed ? '(逆)' : '(正)';
+        const orientationColor = targetCard.isReversed ? 'text-red-400' : 'text-green-400';
+
+        const orientationHtmlImageMode = isThoth ? '' : `<span class="${orientationColor} ml-0.5">${orientationText}</span>`;
+        const orientationHtmlTextMode = isThoth ? '' : ` <span class="${orientationColor}">${orientationText}</span>`;
+
+        const labelEl = document.getElementById(`reading-label-${slotIndex}`);
+        const meaning = labelEl ? labelEl.innerText : '';
+
+        textEl.innerHTML = `
+            <span class="text-[0.65rem] sm:text-sm font-bold text-white truncate max-w-[85px] image-mode-text whitespace-nowrap">${cleanName}${orientationHtmlImageMode}</span>
+            <span class="text-xs sm:text-sm font-bold text-white whitespace-nowrap text-mode-text hidden flex-col items-center gap-0.5">
+                <span class="text-yellow-300 opacity-80">${meaning}</span>
+                <span class="text-[0.65rem] text-blue-300 font-bold tracking-widest">［${deckNameShort}］</span>
+                <span>${cleanName}${orientationHtmlTextMode}</span>
+            </span>
+        `;
+
+        // 同步圖文模式顯示狀態
+        if (document.getElementById('reading-spread').classList.contains('text-only-mode')) {
+            textEl.querySelectorAll('.image-mode-text').forEach(e => e.classList.add('hidden'));
+            textEl.querySelectorAll('.text-mode-text').forEach(e => e.classList.remove('hidden'));
+        }
+
+        // 3. 翻出新牌
+        flipEl.style.transform = 'rotateY(180deg)';
+        textEl.style.opacity = '1';
+
+        const cDiv = flipEl.closest('.history-card');
+        if (cDiv) {
+            cDiv.onclick = (e) => {
+                e.stopPropagation(); // 防止事件冒泡
+                if (typeof openCardMeaning === 'function') {
+                    // ✨ 修正 4：把 meaning 變數一併傳進去
+                    openCardMeaning(targetCard.id, targetCard.isReversed, targetCard.image, displayCardName.replace('\n', ' '), meaning);
+                }
+            };
+        }
+    }, 350); // duration-700 的一半，確保邊緣朝向玩家時才換圖
+};
+
+// ==========================================
+// 🔄 切換器：全陣切換 (右下角 FAB)
+// ==========================================
+window.toggleFullSpreadLayer = function(forceIndex = null) {
+    const record = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData : currentDetailRecord;
+    const fullLayers = record.crossDraws.filter(d => d.type === 'full');
+    if (fullLayers.length === 0) return;
+
+    if (fullLayers.length >= 5 && forceIndex === null) {
+        openLayerSelectModal('full', null, fullLayers, window.currentDisplayLayer);
+        return;
+    }
+
+    if (forceIndex !== null) {
+        window.currentDisplayLayer = forceIndex; 
+    } else {
+        window.currentDisplayLayer++; 
+        if (window.currentDisplayLayer >= fullLayers.length) window.currentDisplayLayer = -1; 
+    }
+
+    const targetCards = window.currentDisplayLayer === -1 ? record.cards : fullLayers[window.currentDisplayLayer].cards;
+    if (typeof showToast === 'function') showToast(window.currentDisplayLayer === -1 ? '🔮 顯示主牌陣' : `🔮 顯示跨牌：${fullLayers[window.currentDisplayLayer].deckName}`);
+
+    const fab = document.getElementById('fab-toggle-full');
+    if (fab) fab.innerText = window.currentDisplayLayer === -1 ? '🔄' : `全${window.currentDisplayLayer + 1}`;
+
+    targetCards.forEach(c => {
+        // 同步更新左上角的 Local 按鈕狀態
+        const localBtn = document.getElementById(`local-full-toggle-${c.slotIndex}`);
+        if (localBtn) {
+            localBtn.dataset.currentIdx = window.currentDisplayLayer === -1 ? 0 : window.currentDisplayLayer + 1;
+            localBtn.innerText = window.currentDisplayLayer === -1 ? '🌌' : `全${window.currentDisplayLayer + 1}`;
+        }
+        // 強制重置單張按鈕 (避免邏輯混亂)
+        const singleBtn = document.getElementById(`local-single-toggle-${c.slotIndex}`);
+        if (singleBtn && singleBtn.dataset.currentIdx !== '0') {
+            singleBtn.dataset.currentIdx = '0';
+            singleBtn.innerText = '➕';
+        }
+        animateCardReveal(c.slotIndex, c, record);
+    });
+
+    // ✨ 新增：動態修改下方的刪除按鈕 (剝離全陣神諭)
+    const deleteBtn = document.querySelector('#reading-buttons button[onclick^="delete"]');
+    if (deleteBtn && typeof currentViewingRecordId !== 'undefined' && currentViewingRecordId) {
+        if (window.currentDisplayLayer >= 0) {
+            deleteBtn.innerText = '🗑️ 刪除全陣';
+            deleteBtn.setAttribute('onclick', `deleteCrossDrawLayer('full', ${window.currentDisplayLayer})`);
+        } else {
+            deleteBtn.innerText = '🗑️ 刪除';
+            deleteBtn.setAttribute('onclick', 'deleteCurrentRecord()');
+        }
+    }
+};
+
+// ==========================================
+// 🔄 切換器：局部全陣切換 (左上角 🌌)
+// ==========================================
+window.toggleLocalFullLayer = function(event, slotIndex, forceIndex = null) {
+    if (event) event.stopPropagation();
+    const record = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData : currentDetailRecord;
+    const fullLayers = record.crossDraws.filter(d => d.type === 'full');
+    if (fullLayers.length === 0) return;
+
+    const btn = document.getElementById(`local-full-toggle-${slotIndex}`);
+    if (!btn) return;
+    let currentIdx = parseInt(btn.dataset.currentIdx || '0');
+
+    if (fullLayers.length >= 5 && forceIndex === null) {
+        openLayerSelectModal('local_full', slotIndex, fullLayers, currentIdx);
+        return;
+    }
+
+    if (forceIndex !== null) currentIdx = forceIndex;
+    else { currentIdx++; if (currentIdx > fullLayers.length) currentIdx = 0; }
+    
+    btn.dataset.currentIdx = currentIdx;
+    btn.innerText = currentIdx === 0 ? '🌌' : `全${currentIdx}`;
+
+    const singleBtn = document.getElementById(`local-single-toggle-${slotIndex}`);
+    if (singleBtn && singleBtn.dataset.currentIdx !== '0') {
+        singleBtn.dataset.currentIdx = '0';
+        singleBtn.innerText = '➕';
+    }
+
+    const targetCard = currentIdx === 0 ? record.cards.find(c => c.slotIndex === slotIndex) : fullLayers[currentIdx-1].cards.find(c => c.slotIndex === slotIndex);
+    if (typeof showToast === 'function') showToast(currentIdx === 0 ? '切換為主牌' : `全陣跨牌 (${fullLayers[currentIdx-1].deckName})`);
+
+    animateCardReveal(slotIndex, targetCard, record);
+};
+
+// ==========================================
+// 🔄 切換器：單張補充切換 (右上角 ➕)
+// ==========================================
+window.toggleSingleSlot = function(event, slotIndex, forceIndex = null) {
+    if (event) event.stopPropagation(); // 阻止事件穿透
+    const record = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData : currentDetailRecord;
+    const supplements = record.crossDraws.filter(d => d.type === 'single' && d.slotIndex === slotIndex);
+    if (supplements.length === 0) return;
+
+    // ✨ 1. 改為抓取專屬於單張切換的按鈕 ID
+    const btn = document.getElementById(`local-single-toggle-${slotIndex}`);
+    if (!btn) return;
+    let currentIdx = parseInt(btn.dataset.currentIdx || '0');
+
+    // 如果單張補充神諭 >= 5，打開選單！
+    if (supplements.length >= 5 && forceIndex === null) {
+        openLayerSelectModal('single', slotIndex, supplements, currentIdx);
+        return;
+    }
+
+    if (forceIndex !== null) {
+        currentIdx = forceIndex;
+    } else { 
+        currentIdx++; 
+        if (currentIdx > supplements.length) currentIdx = 0; 
+    }
+    
+    btn.dataset.currentIdx = currentIdx;
+    
+    // ✨ 2. 變更按鈕文字為 ➕ 或是 單1、單2
+    btn.innerText = currentIdx === 0 ? '➕' : `單${currentIdx}`;
+
+    // ✨ 3. 雙按鈕防呆：如果切換了單張神諭，強制把「全牌陣(🌌)」的按鈕重置歸零
+    const fullBtn = document.getElementById(`local-full-toggle-${slotIndex}`);
+    if (fullBtn && fullBtn.dataset.currentIdx !== '0') {
+        fullBtn.dataset.currentIdx = '0';
+        fullBtn.innerText = '🌌';
+    }
+
+    const targetCard = currentIdx === 0 ? record.cards.find(c => c.slotIndex === slotIndex) : supplements[currentIdx-1].card;
+    if (typeof showToast === 'function') {
+        showToast(currentIdx === 0 ? '切換為主牌' : `單張神諭 (${supplements[currentIdx-1].deckName})`);
+    }
+
+    // ✨ 4. 將原本生硬替換 HTML 的邏輯，改為呼叫我們寫好的華麗翻牌動畫引擎！
+    if (typeof animateCardReveal === 'function') {
+        animateCardReveal(slotIndex, targetCard, record);
+    }
+
+    // ✨ 新增：動態修改下方的刪除按鈕 (剝離單張神諭)
+    const deleteBtn = document.querySelector('#reading-buttons button[onclick^="delete"]');
+    if (deleteBtn && typeof currentViewingRecordId !== 'undefined' && currentViewingRecordId) {
+        if (currentIdx > 0) {
+            deleteBtn.innerText = '🗑️ 刪除單張';
+            // 傳入 slotIndex 讓系統知道要剝離哪一個位置的牌
+            deleteBtn.setAttribute('onclick', `deleteCrossDrawLayer('single', ${currentIdx - 1}, ${slotIndex})`);
+        } else {
+            // 如果切回主牌 (0)，檢查有沒有全陣正在亮，沒的話就恢復一般刪除
+            if (window.currentDisplayLayer === -1) {
+                deleteBtn.innerText = '🗑️ 刪除';
+                deleteBtn.setAttribute('onclick', 'deleteCurrentRecord()');
+            }
+        }
+    }
+};
+
+// ==========================================
+// 🔄 選單彈窗：動態生成圖層切換選單
+// ==========================================
+window.openLayerSelectModal = function(type, slotIndex, layers, currentIndex) {
+    let modal = document.getElementById('layer-select-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'layer-select-modal';
+        modal.className = 'fixed inset-0 z-[150] bg-black/90 backdrop-blur-md hidden flex-col p-4 justify-center items-center';
+        modal.innerHTML = `
+            <div class="bg-indigo-950 border border-emerald-500/50 rounded-xl max-w-xs w-full p-5 flex flex-col shadow-2xl relative">
+                <button onclick="document.getElementById('layer-select-modal').classList.replace('flex', 'hidden')" class="absolute top-3 right-3 text-emerald-300 hover:text-white text-xl">&times;</button>
+                <h3 class="text-lg font-bold text-emerald-300 mb-4 text-center">🔄 選擇檢視圖層</h3>
+                <select id="layer-select-dropdown" class="w-full bg-purple-900 border border-emerald-500 rounded p-2 text-white mb-4"></select>
+                <button id="btn-confirm-layer-switch" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded transition-colors">確認切換</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    const dropdown = document.getElementById('layer-select-dropdown');
+    let optionsHTML = `<option value="${type === 'full' ? -1 : 0}" ${currentIndex === (type === 'full' ? -1 : 0) ? 'selected' : ''}>主牌陣</option>`;
+    
+    layers.forEach((layer, idx) => {
+        const targetVal = type === 'full' ? idx : idx + 1; 
+        const isSelected = currentIndex === targetVal ? 'selected' : '';
+        optionsHTML += `<option value="${targetVal}" ${isSelected}>跨牌 ${idx + 1}：${layer.deckName}</option>`;
+    });
+    
+    dropdown.innerHTML = optionsHTML;
+    document.getElementById('btn-confirm-layer-switch').onclick = () => {
+        const selectedVal = parseInt(dropdown.value);
+        if (type === 'full') toggleFullSpreadLayer(selectedVal);
+        else if (type === 'local_full') toggleLocalFullLayer(null, slotIndex, selectedVal);
+        else toggleSingleSlot(null, slotIndex, selectedVal);
+        modal.classList.replace('flex', 'hidden');
+    };
+    modal.classList.replace('hidden', 'flex');
+};
+
+// ✨ 初始化：首頁抽牌的牌組選單
+window.initSetupMainDeckSelect = async function() {
+    const selectEl = document.getElementById('setup-main-deck-select');
+    if (!selectEl) return;
+    
+    const themeList = await DB.get('deck_theme_list', [
+        { name: '經典萊德偉特', id: 'cards' },
+        { name: '托特塔羅牌', id: 'thoth' }
+    ]);
+    selectEl.innerHTML = themeList.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    
+    const currentTheme = await DB.get('deck_theme', 'cards');
+    selectEl.value = currentTheme;
+
+    selectEl.addEventListener('change', async (e) => {
+        await DB.set('deck_theme', e.target.value);
+        if (typeof showToast === 'function') showToast(`🔮 已切換為：${e.target.options[e.target.selectedIndex].text}`);
+    });
+};
+
+// ✨ 搭配自動存檔的「更新備註並離開」邏輯
+window.updateNotesAndExit = async function() {
+    let history = await DB.get('history', []);
+    const targetId = (typeof isRitualActive !== 'undefined' && isRitualActive) ? currentRitualData.id : currentViewingRecordId;
+    const index = history.findIndex(r => r.id === targetId);
+    const notesVal = document.getElementById('reading-notes-input').value;
+    
+    if (index !== -1) {
+        history[index].notes = notesVal;
+        await DB.set('history', history);
+    }
+    
+    if (typeof showToast === 'function') showToast('📜 備註已更新儲存！');
+    setTimeout(() => {
+        isRitualActive = false;
+        window.location.href = window.location.origin + window.location.pathname;
+    }, 800);
+};
+
+// ✨ 全域：獨立放大圖片模組
+window.openEnlargedImage = function(event, imgSrc, isReversed) {
+    if (event) event.stopPropagation(); // 防止點擊穿透觸發關閉
+    
+    let viewer = document.getElementById('global-image-viewer');
+    if (!viewer) {
+        viewer = document.createElement('div');
+        viewer.id = 'global-image-viewer';
+        // z-[200] 確保它蓋過所有東西 (解牌彈窗通常是 100 或 150)
+        viewer.className = 'fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md cursor-zoom-out opacity-0 transition-opacity duration-300';
+        viewer.onclick = () => {
+            viewer.style.opacity = '0';
+            setTimeout(() => viewer.style.display = 'none', 300);
+        };
+        document.body.appendChild(viewer);
+    }
+    
+    // 處理逆位旋轉
+    const transformStyle = isReversed ? 'transform: rotate(180deg);' : '';
+    
+    viewer.innerHTML = `<img src="${imgSrc}" class="max-w-full max-h-[90vh] object-contain shadow-[0_0_30px_rgba(250,204,21,0.3)] rounded-xl border border-yellow-500/50" style="${transformStyle}">`;
+    viewer.style.display = 'flex';
+    
+    // 強制重繪以觸發動畫
+    viewer.offsetHeight;
+    viewer.style.opacity = '1';
+};
+
+window.confirmCustomDrawCount = async function() {
+    const inputEl = document.getElementById('custom-draw-count-input');
+    let count = parseInt(inputEl.value);
+    
+    // 取得當前選擇的牌組最大張數 (22 或 78)
+    const maxDeckSize = currentSelectedDeckSize || 78;
+
+    if (isNaN(count) || count < 1) {
+        if (typeof showToast === 'function') showToast('請輸入有效的抽牌張數！');
+        return;
+    }
+    
+    if (count > maxDeckSize) {
+        if (typeof showToast === 'function') showToast(`⚠️ 超過最大牌數！目前牌組只有 ${maxDeckSize} 張`);
+        inputEl.value = maxDeckSize; // 強制修正輸入框為最大值
+        return;
+    }
+
+    // 建立一個動態的 ID，例如 custom_dynamic_5
+    const dynamicSpreadId = `custom_dynamic_${count}`;
+    
+    if (typeof currentSelectedSpread !== 'undefined') {
+        currentSelectedSpread = dynamicSpreadId;
+    } else {
+        window.currentSelectedSpread = dynamicSpreadId;
+    }
+
+    await DB.set('last_spread_id', dynamicSpreadId);
+
+    if (typeof currentRitualData !== 'undefined') {
+        currentRitualData.spread = dynamicSpreadId;
+    }
+
+    const label = document.getElementById('setup-spread-label');
+    const icon = document.getElementById('setup-spread-icon');
+
+    if (label) label.innerText = `自訂抽取 (${count}張)`;
+    if (icon) icon.innerText = '🔢';
+
+    const modal = document.getElementById('modal-spread');
+    if (modal && !modal.classList.contains('hidden')) {
+        history.back(); // 觸發返回機制關閉 Modal
+    }
+    
+    if (typeof showToast === 'function') showToast(`✅ 已設定抽取 ${count} 張牌`);
+};
+
+// ✨ 修正 4：剝離式跨牌刪除法
+window.deleteCrossDrawLayer = async function(type, targetIndex, slotIndex = null) {
+    showConfirm(`確定要將此神諭剝離並移至回收桶嗎？\n(主牌陣將不受影響)`, async () => {
+        if (!currentDetailRecord || !currentDetailRecord.crossDraws) return;
+
+        let peeledRecord = null;
+
+        // 1. 剝離邏輯
+        if (type === 'full') {
+            const fulls = currentDetailRecord.crossDraws.filter(d => d.type === 'full');
+            peeledRecord = fulls[targetIndex];
+            currentDetailRecord.crossDraws = currentDetailRecord.crossDraws.filter(d => d !== peeledRecord);
+        } else if (type === 'single') {
+            const singles = currentDetailRecord.crossDraws.filter(d => d.type === 'single' && d.slotIndex === slotIndex);
+            peeledRecord = singles[targetIndex];
+            currentDetailRecord.crossDraws = currentDetailRecord.crossDraws.filter(d => d !== peeledRecord);
+        }
+
+        if (!peeledRecord) return;
+
+        // 2. 將剝離的資料包裝成一筆新的刪除紀錄
+        const trashRecord = {
+            id: 'peeled_' + Date.now().toString(),
+            date: new Date().toLocaleString('zh-TW'),
+            question: `[已剝離的神諭] ${currentDetailRecord.question}`,
+            spread: type === 'full' ? currentDetailRecord.spread : 'single',
+            mainDeckId: peeledRecord.deckId,
+            mainDeckName: peeledRecord.deckName,
+            isDeleted: true, // 直接進回收桶
+            cards: type === 'full' ? peeledRecord.cards : [peeledRecord.card]
+        };
+
+        // 3. 儲存更新
+        let history = await DB.get('history', []);
+        
+        // 更新主紀錄
+        const idx = history.findIndex(r => r.id === currentDetailRecord.id);
+        if (idx !== -1) history[idx] = currentDetailRecord;
+        
+        // 塞入垃圾桶紀錄
+        history.unshift(trashRecord);
+        await DB.set('history', history);
+
+        if (typeof showToast === 'function') showToast('🗑️ 神諭已剝離並移至回收桶');
+
+        // 4. 重置畫面，回到主牌盤
+        window.currentDisplayLayer = -1;
+        showRecordDetails(currentDetailRecord, false);
+    });
 };
